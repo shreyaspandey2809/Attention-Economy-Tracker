@@ -1,0 +1,7 @@
+# Weeks 1-2 — schema layer.
+# LightGBM, PyTorch, SHAP, FastAPI, pandas etc. get added as their
+# respective modules (M2+) come online, per the hardcode-first /
+# incremental-dependency approach.
+pydantic>=2.0,<3.0
+pyyaml>=6.0
+pytest>=8.0

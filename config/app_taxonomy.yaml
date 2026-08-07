@@ -1,0 +1,178 @@
+# Seed app taxonomy — package_name -> {display_name, category}
+# ~50 apps spanning all AppCategory values. This is the ground-truth
+# mapping the synthetic archetypes (M2) will draw from, and the
+# default lookup the feature pipeline (M3) falls back to before any
+# user override exists.
+#
+# Categories: PRODUCTIVE, ADDICTIVE, ENTERTAINMENT, COMMUNICATION,
+#             UTILITY, UNKNOWN
+
+apps:
+  # --- ADDICTIVE (short-form / infinite-scroll / variable-reward) ---
+  com.instagram.android:
+    display_name: Instagram
+    category: ADDICTIVE
+  com.zhiliaoapp.musically:
+    display_name: TikTok
+    category: ADDICTIVE
+  com.twitter.android:
+    display_name: X (Twitter)
+    category: ADDICTIVE
+  com.reddit.frontpage:
+    display_name: Reddit
+    category: ADDICTIVE
+  com.snapchat.android:
+    display_name: Snapchat
+    category: ADDICTIVE
+  com.pinterest:
+    display_name: Pinterest
+    category: ADDICTIVE
+  com.facebook.katana:
+    display_name: Facebook
+    category: ADDICTIVE
+  com.google.android.youtube:
+    display_name: YouTube
+    category: ADDICTIVE
+
+  # --- ENTERTAINMENT (bounded sessions, not compulsive-loop by design) ---
+  com.netflix.mediaclient:
+    display_name: Netflix
+    category: ENTERTAINMENT
+  com.spotify.music:
+    display_name: Spotify
+    category: ENTERTAINMENT
+  com.google.android.apps.youtube.music:
+    display_name: YouTube Music
+    category: ENTERTAINMENT
+  in.startv.hotstar:
+    display_name: Disney+ Hotstar
+    category: ENTERTAINMENT
+  com.amazon.avod.thirdpartyclient:
+    display_name: Prime Video
+    category: ENTERTAINMENT
+  com.king.candycrushsaga:
+    display_name: Candy Crush Saga
+    category: ENTERTAINMENT
+  com.supercell.clashofclans:
+    display_name: Clash of Clans
+    category: ENTERTAINMENT
+  com.mojang.minecraftpe:
+    display_name: Minecraft
+    category: ENTERTAINMENT
+  com.miHoYo.GenshinImpact:
+    display_name: Genshin Impact
+    category: ENTERTAINMENT
+
+  # --- COMMUNICATION ---
+  com.whatsapp:
+    display_name: WhatsApp
+    category: COMMUNICATION
+  org.telegram.messenger:
+    display_name: Telegram
+    category: COMMUNICATION
+  com.discord:
+    display_name: Discord
+    category: COMMUNICATION
+  com.google.android.gm:
+    display_name: Gmail
+    category: COMMUNICATION
+  com.microsoft.office.outlook:
+    display_name: Outlook
+    category: COMMUNICATION
+  com.slack:
+    display_name: Slack
+    category: COMMUNICATION
+  com.skype.raider:
+    display_name: Skype
+    category: COMMUNICATION
+  com.google.android.apps.messaging:
+    display_name: Messages
+    category: COMMUNICATION
+
+  # --- PRODUCTIVE ---
+  com.google.android.apps.docs:
+    display_name: Google Docs
+    category: PRODUCTIVE
+  com.microsoft.office.word:
+    display_name: Microsoft Word
+    category: PRODUCTIVE
+  com.google.android.calendar:
+    display_name: Google Calendar
+    category: PRODUCTIVE
+  com.todoist:
+    display_name: Todoist
+    category: PRODUCTIVE
+  notion.id:
+    display_name: Notion
+    category: PRODUCTIVE
+  com.evernote:
+    display_name: Evernote
+    category: PRODUCTIVE
+  com.google.android.apps.docs.editors.sheets:
+    display_name: Google Sheets
+    category: PRODUCTIVE
+  com.duolingo:
+    display_name: Duolingo
+    category: PRODUCTIVE
+  com.khanacademy.android:
+    display_name: Khan Academy
+    category: PRODUCTIVE
+  com.coursera.android:
+    display_name: Coursera
+    category: PRODUCTIVE
+  com.github.android:
+    display_name: GitHub
+    category: PRODUCTIVE
+  com.jetbrains.projector:
+    display_name: JetBrains IDE Client
+    category: PRODUCTIVE
+
+  # --- UTILITY ---
+  com.google.android.apps.maps:
+    display_name: Google Maps
+    category: UTILITY
+  com.google.android.calculator:
+    display_name: Calculator
+    category: UTILITY
+  com.android.settings:
+    display_name: Settings
+    category: UTILITY
+  com.google.android.deskclock:
+    display_name: Clock
+    category: UTILITY
+  com.android.chrome:
+    display_name: Chrome
+    category: UTILITY
+  com.google.android.apps.photos:
+    display_name: Google Photos
+    category: UTILITY
+  com.ubercab:
+    display_name: Uber
+    category: UTILITY
+  in.swiggy.android:
+    display_name: Swiggy
+    category: UTILITY
+  com.google.android.apps.walletnfcrel:
+    display_name: Google Wallet
+    category: UTILITY
+  com.dropbox.android:
+    display_name: Dropbox
+    category: UTILITY
+  com.google.android.apps.nbu.files:
+    display_name: Files by Google
+    category: UTILITY
+  com.weather.Weather:
+    display_name: The Weather Channel
+    category: UTILITY
+  com.google.android.apps.translate:
+    display_name: Google Translate
+    category: UTILITY
+  com.amazon.mShop.android.shopping:
+    display_name: Amazon Shopping
+    category: UTILITY
+  in.amazon.mShop.android.shopping:
+    display_name: Amazon India
+    category: UTILITY
+  com.flipkart.android:
+    display_name: Flipkart
+    category: UTILITY

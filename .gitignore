@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+
+# Model artifacts (Git LFS or excluded entirely — decide by M5)
+models_artifacts/*.txt
+models_artifacts/*.pt
+
+# Android
+android/.gradle/
+android/app/build/
+android/local.properties
+
+# Dashboard
+dashboard/node_modules/
+dashboard/build/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
