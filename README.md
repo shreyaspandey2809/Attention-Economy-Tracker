@@ -10,26 +10,28 @@ data) → M3 (sessions + features) → M4 (heuristic baseline) → M5
 (LightGBM models) → M6 (LSTM + autoencoder) → M7 (SHAP) → M8 (FastAPI)
 → M9 (Android) → M10 (dashboard).
 
-## Status: Week 3 — Synthetic Generator started (M2 in progress)
+## Status: Week 4 — Synthetic Generator complete (M2 done)
 
-- [x] M1: Schema Layer — `RawEvent`, `Session`, `AppMetadataEntry`,
-      `TaxonomyLoader` + 50-app seed taxonomy (Weeks 1-2)
-- [x] `ArchetypeProfile` — declarative behavioral profile (category
-      weights, session duration/count distributions, late-night
-      fraction, same-category continuation probability)
-- [x] `BALANCED` and `DOOMSCROLLER` archetypes defined
-- [x] `SyntheticEventGenerator` — turns a profile into a chronologically
-      sorted, schema-valid `RawEvent` stream for N simulated days
-- [x] Unit tests: 42 passing total (32 schema + 10 new). Includes
-      structural validity checks (every event is a real, validated
-      RawEvent; OPENED/CLOSED pairs match) AND archetype-separation
-      checks (Doomscroller shows more addictive-category time,
-      more late-night sessions, and longer average sessions than
-      Balanced on the same seed — confirming the archetypes are
-      behaviorally distinguishable, which M5's model evaluation
-      later depends on)
-- [ ] Binge Weekend, Deep Worker archetypes + configurable
-      population/time window (Week 4, next up)
+- [x] M1: Schema Layer (Weeks 1-2)
+- [x] `BALANCED`, `DOOMSCROLLER` archetypes + core generator (Week 3)
+- [x] `BINGE_WEEKEND`, `DEEP_WORKER` archetypes (Week 4)
+- [x] `ArchetypeProfile` extended with `weekend_session_multiplier` /
+      `weekend_duration_multiplier` — generator now varies session
+      count and duration by weekday vs weekend per-archetype
+- [x] `generate_population()` — generates events for many users at
+      once, each under a (possibly different) archetype
+- [x] `build_population_spec()` — builds a population dict from
+      `[(profile, count), ...]` pairs, with self-documenting user_ids
+      (e.g. `user_DOOMSCROLLER_003`)
+- [x] `flatten_population()` — merges a population's events into one
+      chronologically sorted stream, simulating multi-device ingestion
+- [x] Unit tests: 58 passing total (48 prior + 10 new). Covers
+      structural validity for both new archetypes, weekend-multiplier
+      effect (same seed, weekday vs Saturday, confirms the split is
+      real), Deep Worker vs Doomscroller category-composition
+      separation, and population-generation correctness
+- [ ] M3: Session Builder — join OPENED/CLOSED into Session records
+      (Week 7, next up after Month 2 continues)
 
 ## Setup
 
