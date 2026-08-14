@@ -10,28 +10,35 @@ data) → M3 (sessions + features) → M4 (heuristic baseline) → M5
 (LightGBM models) → M6 (LSTM + autoencoder) → M7 (SHAP) → M8 (FastAPI)
 → M9 (Android) → M10 (dashboard).
 
-## Status: Week 4 — Synthetic Generator complete (M2 done)
+## Status: Week 5 — Session Builder complete (M3 started)
 
 - [x] M1: Schema Layer (Weeks 1-2)
-- [x] `BALANCED`, `DOOMSCROLLER` archetypes + core generator (Week 3)
-- [x] `BINGE_WEEKEND`, `DEEP_WORKER` archetypes (Week 4)
-- [x] `ArchetypeProfile` extended with `weekend_session_multiplier` /
-      `weekend_duration_multiplier` — generator now varies session
-      count and duration by weekday vs weekend per-archetype
-- [x] `generate_population()` — generates events for many users at
-      once, each under a (possibly different) archetype
-- [x] `build_population_spec()` — builds a population dict from
-      `[(profile, count), ...]` pairs, with self-documenting user_ids
-      (e.g. `user_DOOMSCROLLER_003`)
-- [x] `flatten_population()` — merges a population's events into one
-      chronologically sorted stream, simulating multi-device ingestion
-- [x] Unit tests: 58 passing total (48 prior + 10 new). Covers
-      structural validity for both new archetypes, weekend-multiplier
-      effect (same seed, weekday vs Saturday, confirms the split is
-      real), Deep Worker vs Doomscroller category-composition
-      separation, and population-generation correctness
-- [ ] M3: Session Builder — join OPENED/CLOSED into Session records
-      (Week 7, next up after Month 2 continues)
+- [x] M2: Synthetic Data Generator — all 4 archetypes + population
+      generation (Weeks 3-4)
+- [x] `SessionBuilder` — joins OPENED/CLOSED event pairs into
+      `Session` records via FIFO pairing per (user, package), and
+      assigns `transition_from` / `transition_to` from each user's
+      chronological session order. Unmatched opens/closes (e.g. a
+      session still running at the end of a window) are returned for
+      inspection rather than silently dropped or raised as errors.
+- [x] **Bugfix found via Week 5 testing:** the synthetic generator
+      (M2) could produce overlapping sessions — two sessions, even of
+      different apps, occupying intersecting time ranges — which is
+      physically impossible on a real device (only one app can be in
+      the foreground at a time) and broke the Session Builder's
+      pairing. Fixed by clamping each session's start time against a
+      running cursor, threaded across day boundaries so late-night
+      sessions can't collide with the next day's sessions either.
+      Verified with a 200-seed × 4-archetype × 30-day stress check
+      (427,739 adjacent-session pairs, zero overlaps) beyond the
+      committed test suite.
+- [x] Unit tests: 71 passing total (58 prior + 13 new — session
+      pairing, transition assignment, multi-user isolation, unmatched-
+      event handling, FIFO-under-rapid-reopen, full round-trip against
+      the synthetic generator, plus a generator-level non-overlap
+      regression test)
+- [ ] Feature Pipeline — volume + compulsiveness features (Week 8,
+      after Week 6 continues M3/M4 groundwork)
 
 ## Setup
 
