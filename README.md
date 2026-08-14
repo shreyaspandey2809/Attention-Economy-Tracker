@@ -5,40 +5,45 @@ Behavioral analytics system for smartphone app usage — scores per-app
 with a synthetic-data-first, backend-first build order.
 
 See `docs/architecture.md` (added later) for the full module map.
-This repo follows the staged build plan: M1 (schema) → M2 (synthetic
-data) → M3 (sessions + features) → M4 (heuristic baseline) → M5
-(LightGBM models) → M6 (LSTM + autoencoder) → M7 (SHAP) → M8 (FastAPI)
-→ M9 (Android) → M10 (dashboard).
+Build runs in four phases:
 
-## Status: Week 5 — Session Builder complete (M3 started)
+- **Phase 1 — Data foundation:** schema, synthetic data generation,
+  session joining, feature engineering, heuristic baseline (M1-M4)
+- **Phase 2 — ML core:** LightGBM addiction + distraction models,
+  LSTM sequence model, autoencoder, SHAP explainability (M5-M7)
+- **Phase 3 — Backend + database:** SQLite storage, FastAPI serving
+  layer, config migration (M8)
+- **Phase 4 — Android + frontend:** on-device collector, React
+  dashboard (M9-M10)
 
-- [x] M1: Schema Layer (Weeks 1-2)
-- [x] M2: Synthetic Data Generator — all 4 archetypes + population
-      generation (Weeks 3-4)
-- [x] `SessionBuilder` — joins OPENED/CLOSED event pairs into
-      `Session` records via FIFO pairing per (user, package), and
+## Status: Phase 1 — Data Foundation (in progress)
+
+- [x] M1: Schema Layer — `RawEvent`, `Session`, `AppMetadataEntry`,
+      `TaxonomyLoader` + 50-app seed taxonomy
+- [x] M2: Synthetic Data Generator — all 4 archetypes (`BALANCED`,
+      `DOOMSCROLLER`, `BINGE_WEEKEND`, `DEEP_WORKER`) + population
+      generation
+- [x] M3 (started): `SessionBuilder` — joins OPENED/CLOSED event pairs
+      into `Session` records via FIFO pairing per (user, package), and
       assigns `transition_from` / `transition_to` from each user's
       chronological session order. Unmatched opens/closes (e.g. a
       session still running at the end of a window) are returned for
       inspection rather than silently dropped or raised as errors.
-- [x] **Bugfix found via Week 5 testing:** the synthetic generator
-      (M2) could produce overlapping sessions — two sessions, even of
-      different apps, occupying intersecting time ranges — which is
-      physically impossible on a real device (only one app can be in
-      the foreground at a time) and broke the Session Builder's
-      pairing. Fixed by clamping each session's start time against a
-      running cursor, threaded across day boundaries so late-night
-      sessions can't collide with the next day's sessions either.
-      Verified with a 200-seed × 4-archetype × 30-day stress check
-      (427,739 adjacent-session pairs, zero overlaps) beyond the
-      committed test suite.
-- [x] Unit tests: 71 passing total (58 prior + 13 new — session
-      pairing, transition assignment, multi-user isolation, unmatched-
-      event handling, FIFO-under-rapid-reopen, full round-trip against
-      the synthetic generator, plus a generator-level non-overlap
-      regression test)
-- [ ] Feature Pipeline — volume + compulsiveness features (Week 8,
-      after Week 6 continues M3/M4 groundwork)
+- [x] **Bugfix found during Session Builder testing:** the synthetic
+      generator (M2) could produce overlapping sessions — two
+      sessions, even of different apps, occupying intersecting time
+      ranges — which is physically impossible on a real device (only
+      one app can be in the foreground at a time) and broke the
+      Session Builder's pairing. Fixed by clamping each session's
+      start time against a running cursor, threaded across day
+      boundaries so late-night sessions can't collide with the next
+      day's sessions either. Verified with a 200-seed × 4-archetype ×
+      30-day stress check (427,739 adjacent-session pairs, zero
+      overlaps) beyond the committed test suite.
+- [x] Unit tests: 71 passing total
+- [ ] M3 (remaining): Feature Pipeline — volume, compulsiveness,
+      temporal, and transition features
+- [ ] M4: Heuristic Baseline scorer
 
 ## Setup
 
@@ -60,9 +65,9 @@ pytest
 ```
 src/attention_tracker/   # all package code, organized by module (M1-M10)
 tests/                   # mirrors src/ — one test module per source module
-config/                  # YAML configs, populated starting Month 6 (Ch. 9.2)
-android/                 # Android collector (M9, starts Month 6)
-dashboard/               # React dashboard (M10, starts Month 7)
+config/                  # YAML configs, populated during Phase 3 (Ch. 9.2)
+android/                 # Android collector (Phase 4)
+dashboard/               # React dashboard (Phase 4)
 ```
 
 ## Try it yourself
