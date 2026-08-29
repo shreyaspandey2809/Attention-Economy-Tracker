@@ -23,26 +23,41 @@ Build runs in four phases:
 - [x] M2: Synthetic Data Generator — all 4 archetypes (`BALANCED`,
       `DOOMSCROLLER`, `BINGE_WEEKEND`, `DEEP_WORKER`) + population
       generation
-- [x] M3 (started): `SessionBuilder` — joins OPENED/CLOSED event pairs
-      into `Session` records via FIFO pairing per (user, package), and
-      assigns `transition_from` / `transition_to` from each user's
-      chronological session order. Unmatched opens/closes (e.g. a
-      session still running at the end of a window) are returned for
-      inspection rather than silently dropped or raised as errors.
+- [x] M3 (in progress): `SessionBuilder` — joins OPENED/CLOSED event
+      pairs into `Session` records via FIFO pairing per (user,
+      package), with `transition_from` / `transition_to` from each
+      user's chronological session order
 - [x] **Bugfix found during Session Builder testing:** the synthetic
-      generator (M2) could produce overlapping sessions — two
-      sessions, even of different apps, occupying intersecting time
-      ranges — which is physically impossible on a real device (only
-      one app can be in the foreground at a time) and broke the
-      Session Builder's pairing. Fixed by clamping each session's
-      start time against a running cursor, threaded across day
-      boundaries so late-night sessions can't collide with the next
-      day's sessions either. Verified with a 200-seed × 4-archetype ×
-      30-day stress check (427,739 adjacent-session pairs, zero
-      overlaps) beyond the committed test suite.
-- [x] Unit tests: 71 passing total
-- [ ] M3 (remaining): Feature Pipeline — volume, compulsiveness,
-      temporal, and transition features
+      generator (M2) could produce overlapping sessions — physically
+      impossible on a real device (only one app can be in the
+      foreground at a time). Fixed by clamping start times against a
+      running cursor, threaded across day boundaries. Verified with a
+      200-seed × 4-archetype × 30-day stress check (427,739
+      adjacent-session pairs, zero overlaps).
+- [x] M3: `windowing.py` — groups sessions by (user, app, calendar
+      day), pre-sorted by start_time, as the shared grouping every
+      feature function builds on
+- [x] M3: Volume features (`volume.py`) — `total_time_sec`,
+      `session_count`, `avg_session_duration_sec`,
+      `max_session_duration_sec`
+- [x] M3: Compulsiveness features (`compulsiveness.py`) —
+      `interarrival_mean_sec`, `sessions_under_30s_ratio`,
+      `interarrival_under_2min_ratio`
+- [x] **Test-design finding:** an early integration test asserted
+      Doomscroller shows a shorter average same-app return gap than
+      Balanced, computed as an unweighted mean of per-(user, app,
+      day)-group means. That statistic was genuinely unreliable — most
+      groups have only 2 sessions, so a single wide within-day gap
+      swings a group's mean by hours and a few noisy small groups
+      dominate the comparison. Pooling all individual gaps from a
+      single user still only passed 43/50 random seeds. Fixed by
+      pooling gaps across a 15-user population instead of one user,
+      using the quick-return ratio the compulsiveness features were
+      actually designed to support — stable across 50/50 seeds tested.
+- [x] Unit tests: 100 passing total
+- [ ] M3 (remaining): Temporal features (`late_night_usage_pct`,
+      `hourly_usage_entropy`), Transition features, and
+      `feature_vector.py` assembly
 - [ ] M4: Heuristic Baseline scorer
 
 ## Setup
