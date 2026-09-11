@@ -69,6 +69,7 @@ class TestGeneratorStructuralValidity:
             "DOOMSCROLLER",
             "BINGE_WEEKEND",
             "DEEP_WORKER",
+            "COMPULSIVE_CHECKER",
         }
         assert ARCHETYPES["BALANCED"] is BALANCED
         assert ARCHETYPES["DOOMSCROLLER"] is DOOMSCROLLER

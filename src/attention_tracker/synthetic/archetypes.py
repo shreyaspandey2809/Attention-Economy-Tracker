@@ -116,7 +116,40 @@ DEEP_WORKER = ArchetypeProfile(
 )
 
 
+COMPULSIVE_CHECKER = ArchetypeProfile(
+    name="COMPULSIVE_CHECKER",
+    category_weights={
+        AppCategory.ADDICTIVE: 0.65,
+        AppCategory.COMMUNICATION: 0.20,
+        AppCategory.ENTERTAINMENT: 0.10,
+        AppCategory.UTILITY: 0.04,
+        AppCategory.PRODUCTIVE: 0.01,
+    },
+    session_duration_mean_sec=25.0,     # very short — a "check", not a session
+    session_duration_sigma=0.5,
+    sessions_per_day_mean=60.0,         # very high session *count* is the signature
+    sessions_per_day_sigma=0.35,
+    late_night_session_fraction=0.08,  # mildly elevated, but not the defining trait
+    same_category_continuation_prob=0.40,  # frequently re-opens rather than lingering
+    description=(
+        "Very high session count on ADDICTIVE apps, each session "
+        "short (a quick check, not a scroll session), with low "
+        "interarrival time from constantly re-opening. Distinguishes "
+        "itself from Doomscroller by session *frequency* rather than "
+        "session *length* being the dominant compulsive signal — the "
+        "archetype the compulsiveness features (interarrival_mean_sec, "
+        "sessions_under_30s_ratio) are most directly designed to catch."
+    ),
+)
+
+
 ARCHETYPES: dict[str, ArchetypeProfile] = {
     profile.name: profile
-    for profile in (BALANCED, DOOMSCROLLER, BINGE_WEEKEND, DEEP_WORKER)
+    for profile in (
+        BALANCED,
+        DOOMSCROLLER,
+        BINGE_WEEKEND,
+        DEEP_WORKER,
+        COMPULSIVE_CHECKER,
+    )
 }

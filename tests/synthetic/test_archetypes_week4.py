@@ -43,12 +43,13 @@ def taxonomy() -> TaxonomyLoader:
 
 
 class TestNewArchetypesRegistered:
-    def test_all_four_archetypes_registered(self):
+    def test_all_five_archetypes_registered(self):
         assert set(ARCHETYPES.keys()) == {
             "BALANCED",
             "DOOMSCROLLER",
             "BINGE_WEEKEND",
             "DEEP_WORKER",
+            "COMPULSIVE_CHECKER",
         }
 
     def test_binge_weekend_has_weekend_multipliers_above_one(self):
