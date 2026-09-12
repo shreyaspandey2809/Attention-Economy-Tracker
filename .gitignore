@@ -11,10 +11,21 @@ venv/
 models_artifacts/*.txt
 models_artifacts/*.pt
 
-# Android
-android/.gradle/
-android/app/build/
-android/local.properties
+# Android (project actually lives at attention-collector-android/android-app/)
+attention-collector-android/**/.gradle/
+attention-collector-android/**/build/
+attention-collector-android/**/.idea/
+attention-collector-android/**/.cxx/
+attention-collector-android/**/captures/
+attention-collector-android/**/local.properties
+attention-collector-android/**/*.iml
+attention-collector-android/**/.kotlin/
+# Keep the Gradle wrapper jar/scripts if you generate them locally —
+# don't ignore gradlew, gradlew.bat, or gradle/wrapper/*.properties.
+attention-collector-android/**/*.apk
+attention-collector-android/**/*.aab
+attention-collector-android/**/*.keystore
+attention-collector-android/**/*.jks
 
 # Dashboard
 dashboard/node_modules/
