@@ -11,7 +11,7 @@ Every arrow below was confirmed by reading the actual `import`
 statements in the source files, not written from memory of the
 original design.
 
-## Data flow, end to end (current state: M1–M3 complete)
+## Data flow, end to end (current state: M1–M4 complete)
 
 ```
                      ┌─────────────────────────┐
@@ -29,27 +29,41 @@ original design.
                      │  3. cap_session_outliers()│  (pipeline/quality/outliers.py)
                      └────────────┬─────────────┘
                                   │  list[Session]
-                                  ▼
-                     ┌─────────────────────────┐
-                     │  group_sessions_by_      │   (pipeline/windowing.py)
-                     │  user_app_day()          │
-                     └────────────┬─────────────┘
-                                  │  dict[(user, app, day), list[Session]]
-                                  ▼
-                     ┌─────────────────────────┐
-                     │  build_feature_vector()  │   (pipeline/features/feature_vector.py)
-                     │  — calls, per group:     │
-                     │    volume.py             │
-                     │    compulsiveness.py     │
-                     │    temporal.py           │
-                     │    transitions.py        │
-                     └────────────┬─────────────┘
-                                  │  FeatureVector (one per user/app/day)
-                                  ▼
-                     ┌─────────────────────────┐
-                     │  mock_backend/main.py    │   FastAPI: POST /simulate-day
-                     │  (demo layer, not M8)    │
-                     └────────────┬─────────────┘
+                                  ├─────────────────────────────┐
+                                  ▼                             ▼
+                     ┌─────────────────────────┐   ┌─────────────────────────┐
+                     │  group_sessions_by_      │   │  assess_day_            │
+                     │  user_app_day()          │   │  completeness()         │
+                     │  (pipeline/windowing.py) │   │  (pipeline/quality/     │
+                     └────────────┬─────────────┘   │   completeness.py)      │
+                                  │                  │  — placeholder heuristic│
+                                  │                  │    until M9's real sync │
+                                  │                  │    heartbeat exists     │
+                                  │                  └────────────┬────────────┘
+                                  │  dict[(user, app, day), list[Session]]     │
+                                  ▼                                           │
+                     ┌─────────────────────────┐                             │
+                     │  build_feature_vector()  │   (pipeline/features/       │
+                     │  — calls, per group:     │    feature_vector.py)       │
+                     │    volume.py             │                             │
+                     │    compulsiveness.py     │                             │
+                     │    temporal.py           │                             │
+                     │    transitions.py        │                             │
+                     └────────────┬─────────────┘                             │
+                                  │  FeatureVector (one per user/app/day)      │
+                                  ▼                                           │
+                     ┌─────────────────────────┐                             │
+                     │  compute_heuristic_      │   (scoring/heuristic.py,   │
+                     │  score()                 │    scoring/config.py)       │
+                     │  — needs FeatureVector + │                             │
+                     │    the app's AppCategory │                             │
+                     └────────────┬─────────────┘                             │
+                                  │  float, 0-10                               │
+                                  ▼                                           ▼
+                     ┌─────────────────────────────────────────────────────────┐
+                     │  mock_backend/main.py    │   FastAPI: POST /simulate-day │
+                     │  (demo layer, not M8)    │                              │
+                     └────────────┬────────────────────────────────────────────┘
                                   │  JSON over HTTP
                                   ▼
                      ┌─────────────────────────┐
@@ -121,6 +135,15 @@ Depends on `schema/` only.
   calls this function rather than re-chaining the three stages.
   Depends on `dedup.py`, `outliers.py`, `pipeline/session_builder.py`,
   `schema/raw_event.py`, `schema/session.py`.
+- **`completeness.py`** — `assess_day_completeness()`. A **documented
+  placeholder heuristic**: flags a user's day as suspicious if the
+  largest session-free gap (across ALL the user's apps, not one)
+  exceeds a threshold (default 6 hours). Cannot distinguish a real
+  sync failure from genuine non-use — that distinction needs M9's
+  Android sync heartbeat, which doesn't exist yet. Takes the full
+  `list[Session]` for one user-day (not a
+  `group_sessions_by_user_app_day()` output, which is scoped to one
+  app). Depends on `schema/session.py` only.
 
 ### `pipeline/` (top level) — turns events into sessions, sessions into windows
 
@@ -168,26 +191,53 @@ themselves — grouping is the caller's job.
   re-assembled per caller. Depends on all four feature modules above,
   plus `schema/session.py`, `schema/taxonomy_loader.py`.
 
+### `scoring/` — M4 heuristic baseline (M5's `models/` still reserved)
+
+- **`config.py`** — `HeuristicWeights` (validates weights sum to 1.0)
+  and `NormalizationBounds`. Every weight and bound is documented with
+  its justification in the module docstring, including a
+  **design-finding writeup**: an early version scored `DEEP_WORKER`
+  higher than `DOOMSCROLLER` on average because `total_time_sec` and
+  entropy didn't distinguish which app was being used. No internal
+  dependencies.
+- **`heuristic.py`** — `compute_heuristic_score()`. Normalizes each
+  `FeatureVector` field to [0, 1] and combines via `config.py`'s
+  weights into a 0-10 score. Requires the app's `AppCategory` as an
+  explicit input (not looked up internally) to apply a
+  `productive_app_dampener` — the fix for the `DEEP_WORKER` finding
+  above. This score is the M5 LightGBM training TARGET, since no true
+  ground-truth addiction label exists. Depends on
+  `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
+  `scoring/config.py`.
+  **Validation:** archetype-ordering only (no ground truth exists) —
+  see `tests/scoring/test_heuristic.py`, run across all five
+  archetypes and 30 seeds each at a 27/30 pass-rate bar, matching the
+  rigor used for the M3 interarrival-statistic fix.
+
 ### `mock_backend/` — demo integration layer (not the real M8 backend)
 
 - **`main.py`** — FastAPI service. `GET /archetypes` lists the real
   registered archetypes; `POST /simulate-day` runs
   `SyntheticEventGenerator` → `run_data_quality_pipeline` →
-  `group_sessions_by_user_app_day` → `build_feature_vector`, and
+  `assess_day_completeness` (day-level) + `group_sessions_by_user_app_day`
+  → `build_feature_vector` → `compute_heuristic_score` (per app), and
   returns the result as JSON. No persistence — nothing is stored
   between requests. Depends on `synthetic/generator.py`,
   `synthetic/archetypes.py`, `pipeline/quality/pipeline.py`,
-  `pipeline/windowing.py`, `pipeline/features/feature_vector.py`,
+  `pipeline/quality/completeness.py`, `pipeline/windowing.py`,
+  `pipeline/features/feature_vector.py`, `scoring/heuristic.py`,
   `schema/taxonomy_loader.py`.
 
 ### `attention-collector-android/` — demo Android client (not the real M9 collector)
 
 Kotlin + Jetpack Compose app. Archetype picker → "Simulate a day" →
 calls `mock_backend`'s `POST /simulate-day` via Retrofit/Moshi →
-displays the returned `FeatureVector` fields on a dashboard, with a
-visually separate "Scoring & Explainability — in progress" panel for
-M4–M7 output that doesn't exist yet. Does not read real on-device
-usage data — see "What's a stand-in" below.
+displays the returned `FeatureVector` fields plus each app's
+`heuristic_score` (M4, shown as a colored 0-10 badge on each app
+card) and the day's completeness assessment, with a visually separate
+"Model-based scoring — still in progress" panel for M5–M7 output that
+doesn't exist yet. Does not read real on-device usage data — see
+"What's a stand-in" below.
 
 ### Reserved, not yet implemented
 
@@ -195,7 +245,6 @@ These packages exist as empty scaffolding (`__init__.py` only) for
 future milestones. Listed here so their emptiness reads as
 intentional, not abandoned:
 
-- **`scoring/`** — M4 (heuristic baseline), part of M5
 - **`models/`** — M5 (LightGBM), M6 (LSTM, autoencoder)
 - **`explainability/`** — M7 (SHAP)
 - **`storage/`** — M8 (SQLite persistence)
@@ -217,10 +266,18 @@ What's *not* real yet:
   runs on. Real collection is M9's scope.
 - **Persistence.** `mock_backend` holds nothing between requests — no
   database, no history. That's M8's `storage/` scope.
-- **Scoring.** Addiction/distraction scores, LightGBM/LSTM/autoencoder
-  output, and SHAP explanations don't exist yet (M4–M7). The Android
-  app's scoring panel is deliberately left visibly incomplete rather
-  than showing placeholder numbers.
+- **Model-based scoring.** LightGBM/LSTM/autoencoder output and SHAP
+  explanations don't exist yet (M5–M7). The M4 heuristic score IS
+  real (see `scoring/heuristic.py`) — it's a real, tested, weighted
+  combination of real features, not a fabricated number — but it's a
+  hand-designed heuristic, not a learned model. The Android app's
+  "Model-based scoring" panel is deliberately left visibly incomplete
+  for the M5-M7 pieces rather than showing placeholder numbers.
+- **Completeness.** `assess_day_completeness()` is a real, tested gap
+  heuristic, but it genuinely cannot distinguish a sync failure from
+  the user simply not using their phone — that requires M9's Android
+  sync heartbeat, which doesn't exist yet. Treat an "incomplete" flag
+  as "worth a closer look," not as a confirmed sync problem.
 
 ## Standing rule: keep the app in sync with the pipeline
 

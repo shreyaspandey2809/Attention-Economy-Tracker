@@ -16,7 +16,7 @@ map and data-flow diagram. Build runs in four phases:
 - **Phase 4 — Android + frontend:** on-device collector, React
   dashboard (M9-M10)
 
-## Status: Phase 1 — Data Foundation (M3 complete)
+## Status: Phase 1 — Data Foundation (M4 complete)
 
 - [x] M1: Schema Layer — `RawEvent`, `Session`, `AppMetadataEntry`,
       `TaxonomyLoader` + 50-app seed taxonomy
@@ -57,9 +57,13 @@ map and data-flow diagram. Build runs in four phases:
     building → outlier capping as one callable stage, so the fix
     actually runs in the pipeline rather than existing only as
     independently-tested modules
-  - Missing-data/completeness flagging (Sec. 2.3) is the one deferred
-    piece — it depends on an Android sync-heartbeat signal that
-    doesn't exist until M9
+  - `pipeline/quality/completeness.py` — `assess_day_completeness()`,
+    a documented PLACEHOLDER heuristic: flags a user's day if the
+    largest session-free gap (across all their apps) exceeds 6 hours.
+    Cannot distinguish a real sync failure from genuine non-use — that
+    needs M9's real Android sync-heartbeat signal, which doesn't exist
+    yet. Explicitly designed to be replaced (not just kept around) once
+    M9 lands.
 - [x] M3: `windowing.py` — groups sessions by (user, app, calendar
       day), pre-sorted by start_time, as the shared grouping every
       feature function builds on
@@ -99,28 +103,59 @@ map and data-flow diagram. Build runs in four phases:
       training data), and `mock_backend`'s API response all build on
       from here on, rather than each caller re-assembling individual
       feature calls separately.
-- [x] Unit tests: 158 passing total
+- [x] Unit tests: 175 passing total
 - [x] `mock_backend/` — a FastAPI service (separate from the real M8
       backend, which doesn't exist yet) that runs the real pipeline
       end-to-end: synthetic generation → dedup → session building →
-      outlier capping → windowing → full `FeatureVector` computation,
-      exposed via `POST /simulate-day`. Nothing in its response is
-      fabricated — it's the real M1-M3 pipeline with no persistence
-      layer yet. Addiction/distraction scoring fields will be added
-      here as M4-M7 are built.
+      outlier capping → completeness assessment → windowing → full
+      `FeatureVector` computation → M4 heuristic scoring, exposed via
+      `POST /simulate-day`. Nothing in its response is fabricated —
+      it's the real M1-M4 pipeline with no persistence layer yet.
+      LightGBM/LSTM/autoencoder/SHAP fields will be added here as
+      M5-M7 are built.
 - [x] `attention-collector-android/` — a Kotlin + Jetpack Compose
       Android app (archetype picker → "Simulate a day" → dashboard)
       that calls `mock_backend`'s `/simulate-day` and displays the
-      real per-app `FeatureVector` output. Does **not** yet read real
-      device usage data (that's M9's scope) — it's a client
-      demonstrating the pipeline, with a visibly separate "Scoring &
-      Explainability — in progress" panel for M4-M7's not-yet-built
-      output.
+      real per-app `FeatureVector` output, the M4 heuristic score
+      (a colored 0-10 badge on each app card), and the day's
+      completeness assessment. Does **not** yet read real device usage
+      data (that's M9's scope) — it's a client demonstrating the
+      pipeline, with a visibly separate "Model-based scoring — still
+      in progress" panel for M5-M7's not-yet-built output.
   - **Standing rule going forward:** every milestone from M4 onward
     ships with a corresponding update to `mock_backend`'s response
     schema and the Android dashboard, so the app always reflects the
-    project's actual current capability rather than going stale.
-- [ ] M4: Heuristic Baseline scorer (next)
+    project's actual current capability rather than going stale. M4
+    itself is the first milestone this rule applied to — its
+    heuristic score is real and visible in the app, not left as a
+    placeholder.
+- [x] M4: Heuristic Baseline scorer (`scoring/heuristic.py`,
+      `scoring/config.py`) — normalizes each `FeatureVector` field to
+      [0,1] and combines via explicit, individually-justified weights
+      into a 0-10 score. Weights and normalization bounds are
+      documented in `scoring/config.py` rather than left as an
+      illustrative split.
+  - **Design finding caught by test-first validation:** an early
+    version scored `DEEP_WORKER` (long, focused sessions on a single
+    PRODUCTIVE app) *higher* on average than `DOOMSCROLLER` and
+    `BINGE_WEEKEND` — `total_time_sec` and inverted
+    `hourly_usage_entropy` don't know which app they're measuring, so
+    a long focused productive session looked mathematically identical
+    to a long compulsive one. Fixed by requiring the app's
+    `AppCategory` as an explicit scorer input and applying a
+    `productive_app_dampener` (0.3×) to the volume/entropy
+    contributions when the app is PRODUCTIVE-category. Caught and
+    fixed before the weights were trusted, exactly per the project's
+    test-first approach for this scorer.
+  - Validated via archetype-ordering (the only validation available —
+    no ground-truth addiction label exists for any user): across all
+    five archetypes and 30 seeds each, `COMPULSIVE_CHECKER` >
+    `DOOMSCROLLER` > `DEEP_WORKER`/`BALANCED`, and `DOOMSCROLLER` >
+    `DEEP_WORKER` specifically (the exact comparison that failed
+    pre-fix), each holding at a required 27/30-seed pass rate.
+  - This score is the training TARGET for M5's LightGBM models, since
+    no true ground-truth label exists — M5 learns a smoother
+    approximation of this heuristic, not "true addiction."
 
 ## Setup
 
@@ -203,7 +238,8 @@ Then open `attention-collector-android/android-app/` in Android
 Studio, run it on an emulator (pre-configured to reach
 `10.0.2.2:8000`, the emulator's alias for the host machine's
 localhost), pick an archetype, and tap "Simulate a day." The dashboard
-shows the real computed `FeatureVector` for that simulated day —
+shows the real computed `FeatureVector` for that simulated day, each
+app's M4 heuristic score, and a completeness indicator for the day —
 nothing displayed is fabricated, though the data source itself is
 synthetic (M9's real on-device collector doesn't exist yet).
 

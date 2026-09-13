@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -225,19 +226,54 @@ private fun ControlPanel(
 
 @Composable
 private fun PipelineStatsRow(response: com.attentiontracker.collector.network.SimulateDayResponse) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(PanelDark, RoundedCornerShape(10.dp))
             .border(1.dp, BorderSoft, RoundedCornerShape(10.dp))
-            .padding(14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(14.dp)
     ) {
-        StatItem("Events", response.rawEventCount.toString())
-        StatItem("Duplicates", response.duplicateCount.toString())
-        StatItem("Sessions", response.sessionCountTotal.toString())
-        StatItem("Capped", response.outliersCapped.toString())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            StatItem("Events", response.rawEventCount.toString())
+            StatItem("Duplicates", response.duplicateCount.toString())
+            StatItem("Sessions", response.sessionCountTotal.toString())
+            StatItem("Capped", response.outliersCapped.toString())
+        }
+        Spacer(Modifier.height(10.dp))
+        HorizontalDivider(color = BorderSoft)
+        Spacer(Modifier.height(10.dp))
+        CompletenessIndicator(response.completeness)
     }
+}
+
+@Composable
+private fun CompletenessIndicator(completeness: com.attentiontracker.collector.network.CompletenessSummary) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(
+                    if (completeness.isComplete) Sage else Amber,
+                    CircleShape
+                )
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = if (completeness.isComplete) "Day looks complete" else "Gap detected in usage data",
+            color = TextDim,
+            fontSize = 12.sp
+        )
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = completeness.reason,
+        color = TextFaint,
+        fontSize = 11.sp,
+        lineHeight = 15.sp
+    )
 }
 
 @Composable
@@ -280,13 +316,37 @@ private fun AppCard(app: AppFeatureSummary) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Bottom
         ) {
-            Text(shortAppName(app.packageName), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Text(formatSeconds(app.totalTimeSec), color = Amber, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Column {
+                Text(shortAppName(app.packageName), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                Text(formatSeconds(app.totalTimeSec), color = TextDim, fontSize = 12.sp)
+            }
+            HeuristicScoreBadge(app.heuristicScore)
         }
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = BorderSoft)
         Spacer(Modifier.height(8.dp))
         FlowMetrics(app)
+    }
+}
+
+@Composable
+private fun HeuristicScoreBadge(score: Double) {
+    // Score is 0-10 by construction (scoring/heuristic.py) — color
+    // shifts from sage (low) through amber (mid) to a warmer tone
+    // (high) so the number reads at a glance, not just numerically.
+    val color = when {
+        score < 3.0 -> Sage
+        score < 6.0 -> Amber
+        else -> ErrorRed
+    }
+    Column(horizontalAlignment = Alignment.End) {
+        Text(
+            text = String.format("%.1f", score),
+            color = color,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text("/ 10 heuristic", color = TextFaint, fontSize = 10.sp)
     }
 }
 
@@ -332,7 +392,6 @@ private fun EmptyResultsState(message: String = "Pick an archetype and tap \"Sim
 @Composable
 private fun InProgressScoringPanel(scoringMessage: String) {
     val rows = listOf(
-        "Heuristic baseline score" to "M4",
         "LightGBM addiction / distraction" to "M5",
         "LSTM sequence score" to "M6",
         "Autoencoder anomaly signal" to "M6",
@@ -345,7 +404,7 @@ private fun InProgressScoringPanel(scoringMessage: String) {
             .border(1.dp, BorderSoft, RoundedCornerShape(10.dp))
             .padding(16.dp)
     ) {
-        Text("ADDICTION & DISTRACTION SCORING", color = TextFaint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text("MODEL-BASED SCORING — STILL IN PROGRESS", color = TextFaint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(12.dp))
 
         rows.forEach { (label, tag) ->

@@ -25,13 +25,23 @@ data class AppFeatureSummary(
     @Json(name = "sessions_under_30s_ratio") val sessionsUnder30sRatio: Double,
     @Json(name = "interarrival_under_2min_ratio") val interarrivalUnder2minRatio: Double?,
 
-    // Temporal (M3 — added when M3 was completed)
+    // Temporal (M3)
     @Json(name = "late_night_usage_pct") val lateNightUsagePct: Double,
     @Json(name = "hourly_usage_entropy") val hourlyUsageEntropy: Double,
     @Json(name = "weekend_usage_ratio") val weekendUsageRatio: Double,
 
-    // Transitions (M3 — added when M3 was completed)
-    @Json(name = "productive_interruption_rate") val productiveInterruptionRate: Double
+    // Transitions (M3)
+    @Json(name = "productive_interruption_rate") val productiveInterruptionRate: Double,
+
+    // Heuristic score (M4 — added when M4 was completed)
+    @Json(name = "heuristic_score") val heuristicScore: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class CompletenessSummary(
+    @Json(name = "is_complete") val isComplete: Boolean,
+    @Json(name = "max_gap_hours") val maxGapHours: Double,
+    val reason: String
 )
 
 @JsonClass(generateAdapter = true)
@@ -42,6 +52,7 @@ data class SimulateDayResponse(
     @Json(name = "duplicate_count") val duplicateCount: Int,
     @Json(name = "session_count_total") val sessionCountTotal: Int,
     @Json(name = "outliers_capped") val outliersCapped: Int,
+    val completeness: CompletenessSummary,
     @Json(name = "per_app_features") val perAppFeatures: List<AppFeatureSummary>,
     @Json(name = "scoring_status") val scoringStatus: String,
     @Json(name = "scoring_message") val scoringMessage: String
