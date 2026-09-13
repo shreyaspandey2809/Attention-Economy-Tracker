@@ -298,6 +298,10 @@ private fun FlowMetrics(app: AppFeatureSummary) {
         MetricLine("Longest", formatSeconds(app.maxSessionDurationSec))
         MetricLine("Avg gap between sessions", formatSeconds(app.interarrivalMeanSec))
         MetricLine("Short sessions (<30s)", "${(app.sessionsUnder30sRatio * 100).roundToInt()}%")
+        MetricLine("Late-night usage", "${(app.lateNightUsagePct * 100).roundToInt()}%")
+        MetricLine("Weekend share", "${(app.weekendUsageRatio * 100).roundToInt()}%")
+        MetricLine("Time-of-day spread", "${(app.hourlyUsageEntropy * 100).roundToInt()}%")
+        MetricLine("Interrupted productive app", "${(app.productiveInterruptionRate * 100).roundToInt()}%")
     }
 }
 

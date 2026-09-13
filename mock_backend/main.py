@@ -4,18 +4,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from attention_tracker.pipeline.features.compulsiveness import (
-    interarrival_mean_sec,
-    sessions_under_30s_ratio,
-)
-from attention_tracker.pipeline.features.volume import (
-    avg_session_duration_sec,
-    max_session_duration_sec,
-    session_count,
-    total_time_sec,
-)
+from attention_tracker.pipeline.features.feature_vector import build_feature_vector
 from attention_tracker.pipeline.quality.pipeline import run_data_quality_pipeline
 from attention_tracker.pipeline.windowing import group_sessions_by_user_app_day
+from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
 from attention_tracker.synthetic.archetypes import ARCHETYPES
 from attention_tracker.synthetic.generator import SyntheticEventGenerator
 
@@ -31,6 +23,10 @@ app.add_middleware(
 )
 
 _generator = SyntheticEventGenerator()
+# Loaded once at startup, not per-request — TaxonomyLoader reads and
+# parses a YAML file on construction (see taxonomy_loader.py), which
+# would be wasteful to repeat for every /simulate-day call.
+_taxonomy = TaxonomyLoader()
 
 
 class SimulateDayRequest(BaseModel):
@@ -40,12 +36,25 @@ class SimulateDayRequest(BaseModel):
 
 class AppFeatureSummary(BaseModel):
     package_name: str
+
+    # Volume (M3)
     session_count: int
     total_time_sec: float
     avg_session_duration_sec: float
     max_session_duration_sec: float
+
+    # Compulsiveness (M3)
     interarrival_mean_sec: float | None
     sessions_under_30s_ratio: float
+    interarrival_under_2min_ratio: float | None
+
+    # Temporal (M3 — newly added)
+    late_night_usage_pct: float
+    hourly_usage_entropy: float
+    weekend_usage_ratio: float
+
+    # Transitions (M3 — newly added)
+    productive_interruption_rate: float
 
 
 class SimulateDayResponse(BaseModel):
@@ -88,21 +97,26 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
     # Real data-quality pipeline: dedup -> session building -> outlier capping.
     quality_result = run_data_quality_pipeline(events)
 
-    # Real windowing + real M1-M3 feature functions, per app.
+    # Real windowing + the full M1-M3 FeatureVector (volume,
+    # compulsiveness, temporal, transitions) per app.
     windows = group_sessions_by_user_app_day(quality_result.sessions)
     per_app: list[AppFeatureSummary] = []
     for (user_id, package_name, day), sessions in windows.items():
+        fv = build_feature_vector(sessions, _taxonomy)
         per_app.append(
             AppFeatureSummary(
-                package_name=package_name,
-                session_count=session_count(sessions),
-                total_time_sec=total_time_sec(sessions),
-                avg_session_duration_sec=avg_session_duration_sec(sessions),
-                max_session_duration_sec=max_session_duration_sec(sessions),
-                interarrival_mean_sec=(
-                    interarrival_mean_sec(sessions) if len(sessions) >= 2 else None
-                ),
-                sessions_under_30s_ratio=sessions_under_30s_ratio(sessions),
+                package_name=fv.package_name,
+                session_count=fv.session_count,
+                total_time_sec=fv.total_time_sec,
+                avg_session_duration_sec=fv.avg_session_duration_sec,
+                max_session_duration_sec=fv.max_session_duration_sec,
+                interarrival_mean_sec=fv.interarrival_mean_sec,
+                sessions_under_30s_ratio=fv.sessions_under_30s_ratio,
+                interarrival_under_2min_ratio=fv.interarrival_under_2min_ratio,
+                late_night_usage_pct=fv.late_night_usage_pct,
+                hourly_usage_entropy=fv.hourly_usage_entropy,
+                weekend_usage_ratio=fv.weekend_usage_ratio,
+                productive_interruption_rate=fv.productive_interruption_rate,
             )
         )
     per_app.sort(key=lambda a: a.total_time_sec, reverse=True)
@@ -120,6 +134,6 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
             "Addiction/distraction scoring (M4-M7: heuristic baseline, "
             "LightGBM, LSTM/autoencoder, SHAP explainability) is still "
             "under development. This response shows real computed "
-            "behavioral features (M1-M3) only."
+            "behavioral features (M1-M3, now complete) only."
         ),
     )
