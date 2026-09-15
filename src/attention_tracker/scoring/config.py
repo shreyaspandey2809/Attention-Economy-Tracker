@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class HeuristicWeights:
     total_time_sec: float = 0.10
     session_count: float = 0.10
     sessions_under_30s_ratio: float = 0.20
     interarrival_under_2min_ratio: float = 0.20
-    late_night_usage_pct: float = 0.15
+    late_night_usage_time_ratio: float = 0.15
     weekend_usage_ratio: float = 0.10
     hourly_usage_entropy: float = 0.05
     productive_interruption_rate: float = 0.10
@@ -17,7 +18,7 @@ class HeuristicWeights:
             + self.session_count
             + self.sessions_under_30s_ratio
             + self.interarrival_under_2min_ratio
-            + self.late_night_usage_pct
+            + self.late_night_usage_time_ratio
             + self.weekend_usage_ratio
             + self.hourly_usage_entropy
             + self.productive_interruption_rate

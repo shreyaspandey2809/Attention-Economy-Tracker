@@ -45,7 +45,7 @@ def compute_heuristic_score(
         + weights.sessions_under_30s_ratio * fv.sessions_under_30s_ratio
         + weights.interarrival_under_2min_ratio
         * (fv.interarrival_under_2min_ratio or 0.0)
-        + weights.late_night_usage_pct * fv.late_night_usage_pct
+        + weights.late_night_usage_time_ratio * fv.late_night_usage_time_ratio
         + weights.weekend_usage_ratio * fv.weekend_usage_ratio
         + weights.hourly_usage_entropy * normalized_entropy
         + weights.productive_interruption_rate * fv.productive_interruption_rate

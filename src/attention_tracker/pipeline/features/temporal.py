@@ -17,6 +17,20 @@ def late_night_usage_pct(sessions: list[Session]) -> float:
     return late_night_count / len(sessions)
 
 
+def late_night_usage_time_ratio(sessions: list[Session]) -> float:
+    if not sessions:
+        raise ValueError("late_night_usage_time_ratio requires at least one session")
+
+    total = sum(s.duration_sec for s in sessions)
+    if total == 0:
+        return 0.0
+
+    late_night_time = sum(
+        s.duration_sec for s in sessions if s.start_time.hour in LATE_NIGHT_HOURS
+    )
+    return late_night_time / total
+
+
 def hourly_usage_entropy(sessions: list[Session]) -> float:
     if not sessions:
         raise ValueError("hourly_usage_entropy requires at least one session")

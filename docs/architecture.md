@@ -173,11 +173,15 @@ themselves — grouping is the caller's job.
   `sessions_under_30s_ratio`, `interarrival_under_2min_ratio`. Depends
   on `schema/session.py` only. Requires ≥2 sessions for the
   interarrival functions (raises `ValueError` below that).
-- **`temporal.py`** — `late_night_usage_pct` (23:00–04:00, matching
-  the generator's own late-night window definition exactly),
-  `hourly_usage_entropy` (Shannon entropy over hour-of-day, normalized
-  to [0,1]), `weekend_usage_ratio` (duration-weighted, not
-  count-weighted). Depends on `schema/session.py` only.
+- **`temporal.py`** — `late_night_usage_pct` (session-COUNT-based,
+  23:00–04:00, matching the generator's own late-night window
+  definition exactly), `late_night_usage_time_ratio` (the
+  duration-weighted counterpart, added as a fix for a weakness noted
+  in external review — see "Known limitations" below — both are kept
+  since they answer different questions), `hourly_usage_entropy`
+  (Shannon entropy over hour-of-day, normalized to [0,1]),
+  `weekend_usage_ratio` (duration-weighted, not count-weighted).
+  Depends on `schema/session.py` only.
 - **`transitions.py`** — `productive_interruption_rate`. Reads each
   session's `transition_from` (populated by `SessionBuilder`, not
   recomputed here) and resolves it to a category via `TaxonomyLoader`.
@@ -279,7 +283,91 @@ What's *not* real yet:
   sync heartbeat, which doesn't exist yet. Treat an "incomplete" flag
   as "worth a closer look," not as a confirmed sync problem.
 
-## Standing rule: keep the app in sync with the pipeline
+## Known limitations
+
+An external review of this project's methodology raised 37 numbered
+weaknesses, spanning validity, feature design, data, Android, backend,
+and testing concerns. Most were either already-planned future
+milestones (Android/backend items — see "What's a stand-in" above) or
+concrete engineering fixes (addressed directly in `scoring/config.py`,
+`pipeline/features/temporal.py`, and `tests/scoring/`). A subset,
+however, are structural limitations of building on synthetic data
+with no real-user labels — no amount of additional code resolves
+them, only real behavioral data with independently-obtained labels
+can. Documenting them precisely, rather than leaving them
+unaddressed, is the correct response to this category:
+
+- **No ground-truth labels exist.** There is no validated definition
+  of "problematic attention behavior" this project's score is checked
+  against, and no real-human-outcomes dataset to calibrate it with.
+  A score of 7 does not have an established real-world meaning.
+- **The heuristic weights are expert-chosen, not learned.** See
+  `scoring/config.py`'s "WEIGHT PROVENANCE" section for the full
+  statement — this is written directly into the code, not only here.
+- **Circular validation.** The synthetic archetypes (`DOOMSCROLLER`,
+  `COMPULSIVE_CHECKER`, etc.) are constructed to exhibit the exact
+  behaviors the scorer is designed to detect, and the scorer is then
+  checked against those same constructed behaviors. This validates
+  internal consistency (does the code do what it was designed to do)
+  but not correspondence to real human behavior.
+- **M5's LightGBM models will learn the heuristic, not reality.**
+  Since M4's score is the only available training target, a high
+  model accuracy will demonstrate that LightGBM can approximate the
+  hand-designed formula — not that either the heuristic or the model
+  detects real addictive behavior.
+- **No independent validation dataset.** There is no held-out,
+  real-user, independently-labeled dataset to measure generalization
+  against.
+- **Synthetic data is cleaner than real smartphone data.** Real usage
+  logs contain missing events, duplicated events, ambiguous
+  transitions, timezone changes, and device restarts in combinations
+  the synthetic generator does not attempt to reproduce. The
+  data-quality stage (dedup, outlier capping, completeness) is
+  designed against the failure modes the team anticipated, not
+  against an exhaustive real-world sample.
+- **Archetypes are more separable than real people.** Real usage
+  likely varies continuously and inconsistently per person, not
+  cleanly into five categories.
+
+**What would actually resolve this category:** a small pilot with
+real users and an independently-collected behavioral or self-report
+label (or comparison against an existing public dataset with such
+labels), used to check whether the heuristic's relative ordering and
+M5's learned model hold up against real outcomes — not just against
+the synthetic archetypes that were used to build them. This is
+tracked as a known gap, not a blocker to continuing the engineering
+build in the meantime.
+
+### Two design decisions resolved on paper ahead of their milestone
+
+**Permission denial (relevant to M9, not yet built):** Android's
+`PACKAGE_USAGE_STATS` permission requires explicit user action and
+can be revoked at any time. The intended behavior, decided now so
+M9's implementation has a target rather than discovering this
+mid-build: if permission is denied or revoked, the Android app shows
+an explicit "usage access needed" state (not a silent zero-data
+result), and the backend distinguishes "no data because permission
+was never granted" from "no data because nothing happened" — the
+latter is what `assess_day_completeness()`'s gap heuristic already
+partially addresses; the former needs an explicit signal from the
+client, which does not exist yet since M9 hasn't started.
+
+**Privacy architecture (relevant to M8/M9, not yet built):** since
+this project analyzes behavioral patterns rather than generic app
+metadata, an explicit position is stated now rather than left
+implicit:
+- What leaves the phone: session-level events (app, start/end time,
+  category), not raw screen content or keystrokes.
+- What is stored: to be implemented in M8 (`storage/`, SQLite) — not
+  yet built, so nothing is currently stored beyond a single request's
+  lifetime in `mock_backend`.
+- Retention and deletion: not yet designed — this should be decided
+  before M8's storage layer is implemented, not after.
+- On-device-only operation: not currently supported and not yet
+  evaluated as an alternative to server-side scoring; noted here as
+  an open question for M8/M9 rather than a resolved "no."
+
+
 
 Every milestone from M4 onward should add:
 1. The actual model/logic in `src/attention_tracker/`

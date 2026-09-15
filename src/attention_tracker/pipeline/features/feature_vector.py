@@ -8,6 +8,7 @@ from attention_tracker.pipeline.features.compulsiveness import (
 from attention_tracker.pipeline.features.temporal import (
     hourly_usage_entropy,
     late_night_usage_pct,
+    late_night_usage_time_ratio,
     weekend_usage_ratio,
 )
 from attention_tracker.pipeline.features.transitions import (
@@ -41,6 +42,7 @@ class FeatureVector:
 
     # Temporal
     late_night_usage_pct: float
+    late_night_usage_time_ratio: float
     hourly_usage_entropy: float
     weekend_usage_ratio: float
 
@@ -74,6 +76,7 @@ def build_feature_vector(
             interarrival_under_2min_ratio(sessions) if has_multiple else None
         ),
         late_night_usage_pct=late_night_usage_pct(sessions),
+        late_night_usage_time_ratio=late_night_usage_time_ratio(sessions),
         hourly_usage_entropy=hourly_usage_entropy(sessions),
         weekend_usage_ratio=weekend_usage_ratio(sessions),
         productive_interruption_rate=productive_interruption_rate(

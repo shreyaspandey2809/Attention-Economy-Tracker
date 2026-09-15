@@ -103,7 +103,44 @@ map and data-flow diagram. Build runs in four phases:
       training data), and `mock_backend`'s API response all build on
       from here on, rather than each caller re-assembling individual
       feature calls separately.
-- [x] Unit tests: 175 passing total
+- [x] Unit tests: 191 passing total
+- [x] **External review response** — an outside review of the
+      project's scientific validity identified 37 numbered
+      weaknesses. Addressed the fixable ones directly:
+  - Measured (not assumed) correlation between
+    `sessions_under_30s_ratio`, `interarrival_under_2min_ratio`, and
+    `session_count` — found the first two are essentially
+    uncorrelated (-0.06), and `session_count`'s correlation with
+    `sessions_under_30s_ratio` (0.39) is moderate, not severe. No
+    weight change was warranted; documented the measurement in
+    `scoring/config.py` rather than "fixing" a redundancy that didn't
+    hold up.
+  - Added `late_night_usage_time_ratio` (duration-weighted), since
+    the original `late_night_usage_pct` counted sessions — a 5-second
+    late-night check and a 90-minute binge scored identically. Both
+    are kept; the heuristic scorer now uses the duration-weighted one.
+  - Reframed `hourly_usage_entropy`'s role: low entropy (concentrated
+    usage) isn't inherently risky — a student in back-to-back classes
+    also has low entropy — so it's now dampened for PRODUCTIVE apps,
+    the same fix already applied to the volume term.
+  - Documented, rather than silently left implicit: the app
+    taxonomy's single-category-per-app simplification (a YouTube
+    example is written out explicitly), the 0.3 productive-app
+    dampener's chosen-not-derived status, an intended
+    permission-denial handling design for M9, and a privacy-position
+    statement for M8/M9.
+  - Added a weight-sensitivity test suite: perturbed each of the 8
+    heuristic weights by ±25% individually and re-checked the core
+    archetype ordering. **Result: the ordering held in all 16
+    perturbations tested** — a genuine, positive finding that the
+    scorer isn't a knife-edge result of the exact chosen weights.
+  - **Explicitly documented as NOT fixable by code** (see
+    `docs/architecture.md`, "Known limitations"): the absence of
+    real-world ground-truth labels, the circular validation inherent
+    to testing a heuristic against the same synthetic archetypes it
+    was designed around, and the fact that M5's LightGBM will learn
+    to approximate this heuristic rather than independent truth.
+    These require real user data to resolve, not more engineering.
 - [x] `mock_backend/` — a FastAPI service (separate from the real M8
       backend, which doesn't exist yet) that runs the real pipeline
       end-to-end: synthetic generation → dedup → session building →

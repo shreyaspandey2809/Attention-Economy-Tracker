@@ -27,6 +27,7 @@ data class AppFeatureSummary(
 
     // Temporal (M3)
     @Json(name = "late_night_usage_pct") val lateNightUsagePct: Double,
+    @Json(name = "late_night_usage_time_ratio") val lateNightUsageTimeRatio: Double,
     @Json(name = "hourly_usage_entropy") val hourlyUsageEntropy: Double,
     @Json(name = "weekend_usage_ratio") val weekendUsageRatio: Double,
 

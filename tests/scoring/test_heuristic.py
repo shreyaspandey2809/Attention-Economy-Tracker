@@ -32,7 +32,9 @@ def taxonomy() -> TaxonomyLoader:
     return TaxonomyLoader()
 
 
-def _mean_score_for_seed(profile, seed: int, taxonomy: TaxonomyLoader) -> float:
+def _mean_score_for_seed(
+    profile, seed: int, taxonomy: TaxonomyLoader, weights=DEFAULT_WEIGHTS
+) -> float:
     gen = SyntheticEventGenerator(rng=random.Random(seed))
     events = gen.generate("u1", profile, START, num_days=NUM_DAYS)
     result = run_data_quality_pipeline(events)
@@ -41,7 +43,7 @@ def _mean_score_for_seed(profile, seed: int, taxonomy: TaxonomyLoader) -> float:
     for sessions in windows.values():
         fv = build_feature_vector(sessions, taxonomy)
         category = taxonomy.lookup(fv.package_name).category
-        scores.append(compute_heuristic_score(fv, category))
+        scores.append(compute_heuristic_score(fv, category, weights=weights))
     return statistics.mean(scores) if scores else 0.0
 
 
@@ -52,7 +54,7 @@ class TestWeightsAreValid:
             + DEFAULT_WEIGHTS.session_count
             + DEFAULT_WEIGHTS.sessions_under_30s_ratio
             + DEFAULT_WEIGHTS.interarrival_under_2min_ratio
-            + DEFAULT_WEIGHTS.late_night_usage_pct
+            + DEFAULT_WEIGHTS.late_night_usage_time_ratio
             + DEFAULT_WEIGHTS.weekend_usage_ratio
             + DEFAULT_WEIGHTS.hourly_usage_entropy
             + DEFAULT_WEIGHTS.productive_interruption_rate

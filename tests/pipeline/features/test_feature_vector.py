@@ -74,6 +74,7 @@ class TestBuildFeatureVector:
         sessions = [make_session(T0, 60.0, "s1")]
         fv = build_feature_vector(sessions, taxonomy)
         assert 0.0 <= fv.late_night_usage_pct <= 1.0
+        assert 0.0 <= fv.late_night_usage_time_ratio <= 1.0
         assert 0.0 <= fv.hourly_usage_entropy <= 1.0
         assert 0.0 <= fv.weekend_usage_ratio <= 1.0
 

@@ -15,8 +15,6 @@ from attention_tracker.synthetic.generator import SyntheticEventGenerator
 
 app = FastAPI(title="Attention Economy Tracker — MOCK backend (demo only)")
 
-# Wide open for local demo purposes only — the real M8 service will
-# have its own, tighter CORS policy.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,9 +23,6 @@ app.add_middleware(
 )
 
 _generator = SyntheticEventGenerator()
-# Loaded once at startup, not per-request — TaxonomyLoader reads and
-# parses a YAML file on construction (see taxonomy_loader.py), which
-# would be wasteful to repeat for every /simulate-day call.
 _taxonomy = TaxonomyLoader()
 
 
@@ -39,26 +34,22 @@ class SimulateDayRequest(BaseModel):
 class AppFeatureSummary(BaseModel):
     package_name: str
 
-    # Volume (M3)
     session_count: int
     total_time_sec: float
     avg_session_duration_sec: float
     max_session_duration_sec: float
 
-    # Compulsiveness (M3)
     interarrival_mean_sec: float | None
     sessions_under_30s_ratio: float
     interarrival_under_2min_ratio: float | None
 
-    # Temporal (M3)
     late_night_usage_pct: float
+    late_night_usage_time_ratio: float
     hourly_usage_entropy: float
     weekend_usage_ratio: float
 
-    # Transitions (M3)
     productive_interruption_rate: float
 
-    # Heuristic score (M4 — newly added)
     heuristic_score: float
 
 
@@ -83,9 +74,6 @@ class SimulateDayResponse(BaseModel):
 
 @app.get("/archetypes")
 def list_archetypes() -> list[str]:
-    """Lets the frontend populate its dropdown from the real
-    registered archetypes instead of a hardcoded copy that could
-    drift out of sync with archetypes.py."""
     return sorted(ARCHETYPES.keys())
 
 
@@ -103,21 +91,11 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
         hour=0, minute=0, second=0, microsecond=0
     )
 
-    # Real generator, real profile — one simulated day.
     events = _generator.generate(req.user_id, profile, day_start, num_days=1)
-
-    # Real data-quality pipeline: dedup -> session building -> outlier capping.
     quality_result = run_data_quality_pipeline(events)
 
-    # Completeness heuristic (placeholder until M9's real sync
-    # heartbeat exists — see quality/completeness.py's docstring).
-    # Assessed across ALL of the user's sessions for the day, not
-    # per-app, per that module's documented precondition.
     completeness_result = assess_day_completeness(quality_result.sessions)
 
-    # Real windowing + the full M1-M3 FeatureVector (volume,
-    # compulsiveness, temporal, transitions) per app, plus the M4
-    # heuristic score built on top of each FeatureVector.
     windows = group_sessions_by_user_app_day(quality_result.sessions)
     per_app: list[AppFeatureSummary] = []
     for (user_id, package_name, day), sessions in windows.items():
@@ -135,6 +113,7 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
                 sessions_under_30s_ratio=fv.sessions_under_30s_ratio,
                 interarrival_under_2min_ratio=fv.interarrival_under_2min_ratio,
                 late_night_usage_pct=fv.late_night_usage_pct,
+                late_night_usage_time_ratio=fv.late_night_usage_time_ratio,
                 hourly_usage_entropy=fv.hourly_usage_entropy,
                 weekend_usage_ratio=fv.weekend_usage_ratio,
                 productive_interruption_rate=fv.productive_interruption_rate,
@@ -158,8 +137,5 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
         per_app_features=per_app,
         scoring_status="in_progress",
         scoring_message=(
-            "M4 heuristic baseline scores are shown below. LightGBM, "
-            "LSTM/autoencoder, and SHAP explainability (M5-M7) are "
-            "still under development."
         ),
     )
