@@ -10,7 +10,7 @@ from attention_tracker.pipeline.features.temporal import (
 from attention_tracker.schema.session import Session
 
 
-def make_session(start, duration_sec=60.0, session_id="s1"):
+def make_session(start, duration_sec=60.0, session_id="s1", tz_offset=0):
     return Session(
         user_id="u1",
         package_name="com.whatsapp",
@@ -18,6 +18,7 @@ def make_session(start, duration_sec=60.0, session_id="s1"):
         start_time=start,
         end_time=start + timedelta(seconds=duration_sec),
         duration_sec=duration_sec,
+        tz_offset_minutes=tz_offset,
     )
 
 
@@ -140,3 +141,62 @@ class TestWeekendUsageRatio:
             make_session(datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc), 100.0, "s4"),
         ]
         assert weekend_usage_ratio(sessions) == pytest.approx(0.75)
+
+
+class TestTimezoneOffsetIsRespected:
+
+    def test_ist_late_night_session_stored_at_utc_18_00_is_detected(self):
+        # 18:00 UTC == 23:30 IST (UTC+5:30) — squarely late-night locally,
+        # but hour 18 UTC is nowhere near the 23:00-04:00 window.
+        session = make_session(
+            datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc),
+            tz_offset=330,
+        )
+        assert late_night_usage_pct([session]) == 1.0
+
+    def test_ist_2am_session_stored_at_utc_20_30_previous_day_is_detected(self):
+        # 20:30 UTC on Aug 10 == 02:00 IST on Aug 11.
+        session = make_session(
+            datetime(2026, 8, 10, 20, 30, tzinfo=timezone.utc),
+            tz_offset=330,
+        )
+        assert late_night_usage_pct([session]) == 1.0
+
+    def test_same_utc_instant_classified_differently_by_offset(self):
+        # The exact same instant is late-night for an IST user and
+        # daytime for a UTC user — proves the offset, not just the UTC
+        # timestamp, drives the result.
+        utc_instant = datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+        ist_session = make_session(utc_instant, tz_offset=330)
+        utc_session = make_session(utc_instant, tz_offset=0)
+
+        assert late_night_usage_pct([ist_session]) == 1.0
+        assert late_night_usage_pct([utc_session]) == 0.0
+
+    def test_weekend_ratio_uses_local_weekday_not_utc_weekday(self):
+        # 22:30 UTC on Friday Aug 7, 2026 == 04:00 IST on Saturday Aug 8
+        # — a weekend session in local time, a weekday session in UTC.
+        session = make_session(
+            datetime(2026, 8, 7, 22, 30, tzinfo=timezone.utc),
+            duration_sec=600.0,
+            tz_offset=330,
+        )
+        assert weekend_usage_ratio([session]) == 1.0
+
+    def test_hourly_entropy_buckets_by_local_hour(self):
+        # Same UTC hour (18:00), but two different tz offsets place them
+        # in different local hours (23:30 IST vs 18:00 UTC) — entropy
+        # over local hours should see two distinct buckets, not one.
+        sessions = [
+            make_session(
+                datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc),
+                session_id="s1",
+                tz_offset=330,  # local hour 23
+            ),
+            make_session(
+                datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc),
+                session_id="s2",
+                tz_offset=0,  # local hour 18
+            ),
+        ]
+        assert hourly_usage_entropy(sessions) > 0.0

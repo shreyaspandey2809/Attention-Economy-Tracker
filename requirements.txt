@@ -1,7 +1,13 @@
 # Weeks 1-2 — schema layer.
-# LightGBM, PyTorch, SHAP, FastAPI, pandas etc. get added as their
-# respective modules (M2+) come online, per the hardcode-first /
+# LightGBM, PyTorch, SHAP, pandas etc. get added as their
+# respective modules (M5+) come online, per the hardcode-first /
 # incremental-dependency approach.
 pydantic>=2.0,<3.0
 pyyaml>=6.0
 pytest>=8.0
+
+# mock_backend/ (M4 demo layer) — required for a fresh clone to run
+# `uvicorn mock_backend.main:app` or the mock-backend tests.
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+httpx>=0.27,<1.0

@@ -67,21 +67,16 @@ class SyntheticEventGenerator:
         self, day_start: datetime, profile: ArchetypeProfile
     ) -> datetime:
         if self.rng.random() < profile.late_night_session_fraction:
-            # Late night: 23:00-04:00 the following day.
+            # Late night: 23:00 (today) through 04:00 (the following
+            # calendar day) — a single continuous 5-hour stretch.
             hour = self.rng.choice([23, 0, 1, 2, 3])
         else:
             # Waking hours: 06:00-22:00, uniform.
             hour = self.rng.randint(6, 22)
         minute = self.rng.randint(0, 59)
         second = self.rng.randint(0, 59)
-
         base_day = day_start
-        if hour == 23:
-            offset_day = base_day
-        elif hour <= 4:
-            offset_day = base_day + timedelta(days=1) if hour != 0 else base_day
-        else:
-            offset_day = base_day
+        offset_day = base_day + timedelta(days=1) if hour <= 3 else base_day
 
         return offset_day.replace(hour=hour, minute=minute, second=second)
 

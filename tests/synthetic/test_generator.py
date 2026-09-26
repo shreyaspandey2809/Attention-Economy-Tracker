@@ -1,5 +1,6 @@
 import random
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -154,3 +155,51 @@ class TestArchetypeSeparation:
             return sum(durations) / len(durations)
 
         assert avg_duration(doomscroller_week) > avg_duration(balanced_week)
+
+
+class TestLateNightHourDistribution:
+
+    def test_hour_0_is_not_systematically_starved(self, taxonomy: TaxonomyLoader):
+        # Directly exercise the sampler (bypassing the cursor) across
+        # many draws to isolate the day-placement logic itself.
+        gen = SyntheticEventGenerator(taxonomy=taxonomy, rng=random.Random(7))
+        hour_counts = {h: 0 for h in (23, 0, 1, 2, 3)}
+        for _ in range(20_000):
+            forced_late_night = replace(
+                DOOMSCROLLER, late_night_session_fraction=1.0
+            )
+            start = gen._sample_start_time(DAY_START, forced_late_night)
+            if start.hour in hour_counts:
+                hour_counts[start.hour] += 1
+
+        total = sum(hour_counts.values())
+        assert total == 20_000
+        for hour, count in hour_counts.items():
+            share = count / total
+            assert 0.15 < share < 0.25, (
+                f"hour {hour} got {share:.1%} of late-night draws, "
+                "expected roughly 20% (even split across 5 hours)"
+            )
+
+    def test_hour_0_lands_on_the_day_after_day_start(
+        self, taxonomy: TaxonomyLoader
+    ):
+        gen = SyntheticEventGenerator(taxonomy=taxonomy, rng=random.Random(0))
+        forced_late_night = replace(DOOMSCROLLER, late_night_session_fraction=1.0)
+        found_hour_0 = False
+        for _ in range(500):
+            start = gen._sample_start_time(DAY_START, forced_late_night)
+            if start.hour == 0:
+                found_hour_0 = True
+                assert start.date() == DAY_START.date() + timedelta(days=1)
+        assert found_hour_0, "test didn't sample hour 0 in 500 draws — flaky seed"
+
+    def test_full_day_generation_late_night_fraction_matches_profile_design(
+        self, taxonomy: TaxonomyLoader
+    ):
+        gen = SyntheticEventGenerator(taxonomy=taxonomy, rng=random.Random(3))
+        events = gen.generate("user_doom", DOOMSCROLLER, DAY_START, num_days=30)
+        opens = [e for e in events if e.event_type == EventType.OPENED]
+        late = sum(1 for e in opens if e.timestamp.hour in (23, 0, 1, 2, 3))
+        measured = late / len(opens)
+        assert abs(measured - DOOMSCROLLER.late_night_session_fraction) < 0.05

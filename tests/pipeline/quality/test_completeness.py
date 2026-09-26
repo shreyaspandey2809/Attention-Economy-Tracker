@@ -9,7 +9,7 @@ from attention_tracker.schema.session import Session
 DAY_START = datetime(2026, 8, 10, 0, 0, 0, tzinfo=timezone.utc)
 
 
-def make_session(start, duration_sec, session_id, package="com.whatsapp"):
+def make_session(start, duration_sec, session_id, package="com.whatsapp", tz_offset=0):
     return Session(
         user_id="u1",
         package_name=package,
@@ -17,6 +17,7 @@ def make_session(start, duration_sec, session_id, package="com.whatsapp"):
         start_time=start,
         end_time=start + timedelta(seconds=duration_sec),
         duration_sec=duration_sec,
+        tz_offset_minutes=tz_offset,
     )
 
 
@@ -105,3 +106,20 @@ class TestResultFields:
         ]
         result = assess_day_completeness(sessions)
         assert "cannot tell the difference" in result.reason
+
+
+class TestDayLabelUsesLocalDayNotUtcDay:
+
+    def test_ist_session_reports_local_day(self):
+        from datetime import date
+
+        sessions = [
+            make_session(
+                DAY_START + timedelta(hours=20, minutes=30),
+                600.0,
+                "s1",
+                tz_offset=330,
+            )
+        ]
+        result = assess_day_completeness(sessions)
+        assert result.day == date(2026, 8, 11)

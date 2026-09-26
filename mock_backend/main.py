@@ -66,6 +66,8 @@ class SimulateDayResponse(BaseModel):
     duplicate_count: int
     session_count_total: int
     outliers_capped: int
+    rejected_pairs_count: int
+    overlapping_sessions_count: int
     completeness: CompletenessSummary
     per_app_features: list[AppFeatureSummary]
     scoring_status: str
@@ -129,13 +131,20 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
         duplicate_count=quality_result.dedup_result.duplicate_count,
         session_count_total=len(quality_result.sessions),
         outliers_capped=quality_result.outlier_result.capped_count,
+        rejected_pairs_count=len(quality_result.build_result.rejected_pairs),
+        overlapping_sessions_count=len(
+            quality_result.outlier_result.overlapping_session_ids
+        ),
         completeness=CompletenessSummary(
             is_complete=completeness_result.is_complete,
             max_gap_hours=completeness_result.max_gap_hours,
             reason=completeness_result.reason,
         ),
         per_app_features=per_app,
-        scoring_status="in_progress",
+        scoring_status="heuristic_only",
         scoring_message=(
+            "Scores shown are the M4 heuristic baseline (0-10). "
+            "LightGBM, LSTM/autoencoder, and SHAP explainability (M5-M7) "
+            "are not implemented yet."
         ),
     )

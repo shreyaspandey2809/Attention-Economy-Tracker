@@ -11,6 +11,18 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+# mock_backend/ (M4 demo layer). Required to run `uvicorn mock_backend.main:app`
+# or to run tests/mock_backend/ — httpx is TestClient's transport, not used
+# directly, but FastAPI's TestClient requires it to be installed.
+backend = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.29,<1.0",
+    "httpx>=0.27,<1.0",
+]
+# Everything needed to run the full test suite, including tests/mock_backend/.
+test = [
+    "attention-tracker[dev,backend]",
+]
 
 [build-system]
 requires = ["setuptools>=68.0"]

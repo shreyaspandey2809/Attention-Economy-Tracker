@@ -12,7 +12,7 @@ def late_night_usage_pct(sessions: list[Session]) -> float:
         raise ValueError("late_night_usage_pct requires at least one session")
 
     late_night_count = sum(
-        1 for s in sessions if s.start_time.hour in LATE_NIGHT_HOURS
+        1 for s in sessions if s.local_start_time.hour in LATE_NIGHT_HOURS
     )
     return late_night_count / len(sessions)
 
@@ -26,7 +26,9 @@ def late_night_usage_time_ratio(sessions: list[Session]) -> float:
         return 0.0
 
     late_night_time = sum(
-        s.duration_sec for s in sessions if s.start_time.hour in LATE_NIGHT_HOURS
+        s.duration_sec
+        for s in sessions
+        if s.local_start_time.hour in LATE_NIGHT_HOURS
     )
     return late_night_time / total
 
@@ -35,7 +37,7 @@ def hourly_usage_entropy(sessions: list[Session]) -> float:
     if not sessions:
         raise ValueError("hourly_usage_entropy requires at least one session")
 
-    hour_counts = Counter(s.start_time.hour for s in sessions)
+    hour_counts = Counter(s.local_start_time.hour for s in sessions)
     total = len(sessions)
 
     if len(hour_counts) <= 1:
@@ -60,6 +62,6 @@ def weekend_usage_ratio(sessions: list[Session]) -> float:
     weekend_time = sum(
         s.duration_sec
         for s in sessions
-        if s.start_time.isoweekday() in WEEKEND_ISO_WEEKDAYS
+        if s.local_start_time.isoweekday() in WEEKEND_ISO_WEEKDAYS
     )
     return weekend_time / total

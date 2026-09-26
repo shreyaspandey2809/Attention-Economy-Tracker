@@ -53,6 +53,8 @@ data class SimulateDayResponse(
     @Json(name = "duplicate_count") val duplicateCount: Int,
     @Json(name = "session_count_total") val sessionCountTotal: Int,
     @Json(name = "outliers_capped") val outliersCapped: Int,
+    @Json(name = "rejected_pairs_count") val rejectedPairsCount: Int = 0,
+    @Json(name = "overlapping_sessions_count") val overlappingSessionsCount: Int = 0,
     val completeness: CompletenessSummary,
     @Json(name = "per_app_features") val perAppFeatures: List<AppFeatureSummary>,
     @Json(name = "scoring_status") val scoringStatus: String,

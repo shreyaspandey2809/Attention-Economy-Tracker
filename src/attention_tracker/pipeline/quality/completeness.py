@@ -26,7 +26,7 @@ def assess_day_completeness(
         )
 
     user_id = all_sessions_for_user_day[0].user_id
-    day = all_sessions_for_user_day[0].start_time.date()
+    day = all_sessions_for_user_day[0].local_start_time.date()
 
     sessions_sorted = sorted(all_sessions_for_user_day, key=lambda s: s.start_time)
 

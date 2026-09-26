@@ -1,8 +1,17 @@
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 
+from pydantic import ValidationError
+
 from attention_tracker.schema.raw_event import RawEvent, TERMINAL_EVENT_TYPES
 from attention_tracker.schema.session import Session
+
+
+@dataclass
+class RejectedPair:
+    open_event: RawEvent
+    close_event: RawEvent
+    error: str
 
 
 @dataclass
@@ -10,6 +19,7 @@ class SessionBuildResult:
     sessions: list[Session]
     unmatched_opens: list[RawEvent] = field(default_factory=list)
     unmatched_closes: list[RawEvent] = field(default_factory=list)
+    rejected_pairs: list[RejectedPair] = field(default_factory=list)
 
 
 class SessionBuilder:
@@ -20,6 +30,7 @@ class SessionBuilder:
         pending_opens: dict[tuple[str, str], deque[RawEvent]] = defaultdict(deque)
         sessions_by_user: dict[str, list[Session]] = defaultdict(list)
         unmatched_closes: list[RawEvent] = []
+        rejected_pairs: list[RejectedPair] = []
 
         for event in events_sorted:
             key = (event.user_id, event.package_name)
@@ -32,15 +43,34 @@ class SessionBuilder:
                 unmatched_closes.append(event)
                 continue
 
-            open_event = queue.popleft()
-            session = Session(
-                user_id=event.user_id,
-                package_name=event.package_name,
-                session_id=event.session_id,
-                start_time=open_event.timestamp,
-                end_time=event.timestamp,
-                duration_sec=event.session_duration_sec,
-            )
+            session: Session | None = None
+            while queue:
+                open_event = queue.popleft()
+                try:
+                    session = Session(
+                        user_id=event.user_id,
+                        package_name=event.package_name,
+                        session_id=event.session_id,
+                        start_time=open_event.timestamp,
+                        end_time=event.timestamp,
+                        duration_sec=event.session_duration_sec,
+                        tz_offset_minutes=event.tz_offset_minutes,
+                    )
+                    break
+                except ValidationError as exc:
+                    rejected_pairs.append(
+                        RejectedPair(
+                            open_event=open_event, close_event=event, error=str(exc)
+                        )
+                    )
+                    session = None
+                    continue
+
+            if session is None:
+                # Either the queue was empty, or every pending open for
+                # this key failed to pair with this close.
+                unmatched_closes.append(event)
+                continue
             sessions_by_user[event.user_id].append(session)
 
         unmatched_opens = [e for queue in pending_opens.values() for e in queue]
@@ -67,4 +97,5 @@ class SessionBuilder:
             sessions=all_sessions,
             unmatched_opens=unmatched_opens,
             unmatched_closes=unmatched_closes,
+            rejected_pairs=rejected_pairs,
         )

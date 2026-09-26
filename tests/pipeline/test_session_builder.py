@@ -230,3 +230,63 @@ class TestRoundTripWithSyntheticGenerator:
 
         assert sessions[0].transition_from is None
         assert sessions[-1].transition_to is None
+
+
+class TestMalformedPairRecovery:
+
+    def test_malformed_duration_is_rejected_not_raised(self):
+        # CLOSED claims a 95s session but the timestamps span 100s.
+        events = [
+            opened("u1", "com.whatsapp", T0),
+            closed("u1", "com.whatsapp", T0 + timedelta(seconds=100), 95.0, "bad"),
+        ]
+        result = SessionBuilder().build(events)  # must not raise
+
+        assert result.sessions == []
+        assert len(result.rejected_pairs) == 1
+        assert result.rejected_pairs[0].close_event.session_id == "bad"
+
+    def test_malformed_pair_does_not_discard_other_users_sessions(self):
+        events = [
+            opened("u1", "com.whatsapp", T0),
+            closed("u1", "com.whatsapp", T0 + timedelta(seconds=100), 95.0, "bad"),
+            opened("u2", "com.whatsapp", T0),
+            closed("u2", "com.whatsapp", T0 + timedelta(seconds=30), 30.0, "good"),
+        ]
+        result = SessionBuilder().build(events)
+
+        assert len(result.sessions) == 1
+        assert result.sessions[0].session_id == "good"
+        assert len(result.rejected_pairs) == 1
+
+    def test_orphaned_open_from_a_crash_does_not_swallow_the_next_session(self):
+        events = [
+            opened("u1", "com.whatsapp", T0),  # orphaned: app crashed here
+            opened("u1", "com.whatsapp", T0 + timedelta(hours=1)),
+            closed(
+                "u1", "com.whatsapp", T0 + timedelta(hours=1, seconds=30), 30.0, "ok"
+            ),
+        ]
+        result = SessionBuilder().build(events)
+
+        assert len(result.sessions) == 1
+        assert result.sessions[0].session_id == "ok"
+        assert result.sessions[0].start_time == T0 + timedelta(hours=1)
+        assert len(result.rejected_pairs) == 1
+
+    def test_session_carries_tz_offset_from_the_closing_event(self):
+        events = [
+            opened("u1", "com.whatsapp", T0, tz_offset=0),
+            closed(
+                "u1",
+                "com.whatsapp",
+                T0 + timedelta(seconds=30),
+                30.0,
+                "s1",
+                tz_offset=330,  # IST — the terminal event's offset wins
+            ),
+        ]
+        result = SessionBuilder().build(events)
+
+        assert len(result.sessions) == 1
+        assert result.sessions[0].tz_offset_minutes == 330

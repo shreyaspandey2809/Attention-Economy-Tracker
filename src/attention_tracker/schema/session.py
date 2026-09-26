@@ -1,19 +1,6 @@
-"""
-Session — the joined representation of one OPENED/FOREGROUND paired
-with its matching CLOSED/BACKGROUND event. Session Builder (M3, Week
-7) constructs these from a RawEvent stream; this week only defines
-the shape and its internal-consistency validation, since the feature
-pipeline (M3) needs a stable target type to design against before the
-builder itself exists.
+from datetime import datetime, timedelta, timezone
 
-transition_from / transition_to capture what app (if any) the user
-came from and went to — the raw material for M3's transition features
-(e.g. productive_interruption_rate).
-"""
-
-from datetime import datetime, timezone
-
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 
 class Session(BaseModel):
@@ -24,6 +11,7 @@ class Session(BaseModel):
     start_time: datetime
     end_time: datetime
     duration_sec: float = Field(..., ge=0)
+    tz_offset_minutes: int = Field(default=0, ge=-720, le=840)
 
     transition_from: str | None = Field(default=None, max_length=255)
     transition_to: str | None = Field(default=None, max_length=255)
@@ -43,11 +31,16 @@ class Session(BaseModel):
             raise ValueError("end_time must not be before start_time")
 
         computed = (self.end_time - self.start_time).total_seconds()
-        # Allow small float slack (e.g. rounding from the Android
-        # collector's own duration measurement vs. our derived one).
         if abs(computed - self.duration_sec) > 1.0:
             raise ValueError(
                 f"duration_sec ({self.duration_sec}) is inconsistent with "
                 f"end_time - start_time ({computed})"
             )
         return self
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def local_start_time(self) -> datetime:
+        return (self.start_time + timedelta(minutes=self.tz_offset_minutes)).replace(
+            tzinfo=None
+        )
