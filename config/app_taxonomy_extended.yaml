@@ -1,0 +1,163 @@
+apps:
+  # --- ADDICTIVE: short video / feeds / variable reward ---
+  com.instagram.lite: {display_name: Instagram Lite, category: ADDICTIVE}
+  com.facebook.lite: {display_name: Facebook Lite, category: ADDICTIVE}
+  com.sharechat.android: {display_name: ShareChat, category: ADDICTIVE}
+  in.mohalla.video: {display_name: Moj, category: ADDICTIVE}
+  com.roposo.android: {display_name: Roposo, category: ADDICTIVE}
+  com.tiktok.lite: {display_name: TikTok Lite, category: ADDICTIVE}
+  com.ss.android.ugc.trill: {display_name: TikTok (Asia), category: ADDICTIVE}
+  com.linkedin.android: {display_name: LinkedIn, category: ADDICTIVE}
+  com.tumblr: {display_name: Tumblr, category: ADDICTIVE}
+  com.zhihu.android: {display_name: Zhihu, category: ADDICTIVE}
+  com.threads.android: {display_name: Threads, category: ADDICTIVE}
+  com.bereal.ft: {display_name: BeReal, category: ADDICTIVE}
+  com.tinder: {display_name: Tinder, category: ADDICTIVE}
+  com.bumble.app: {display_name: Bumble, category: ADDICTIVE}
+  com.instagram.barcelona: {display_name: Threads (Instagram), category: ADDICTIVE}
+  com.quora.android: {display_name: Quora, category: ADDICTIVE}
+  in.dailyhunt.app: {display_name: Dailyhunt, category: ADDICTIVE}
+  com.inshorts.android: {display_name: Inshorts, category: ADDICTIVE}
+
+  # --- ENTERTAINMENT: streaming, music, games (bounded sessions) ---
+  com.jio.media.jiobeats: {display_name: JioSaavn, category: ENTERTAINMENT}
+  com.gaana: {display_name: Gaana, category: ENTERTAINMENT}
+  com.zee5.zee5: {display_name: ZEE5, category: ENTERTAINMENT}
+  com.sonyliv: {display_name: SonyLIV, category: ENTERTAINMENT}
+  com.jio.jiotv: {display_name: JioTV, category: ENTERTAINMENT}
+  com.mxtech.videoplayer.ad: {display_name: MX Player, category: ENTERTAINMENT}
+  com.twitch.android.app: {display_name: Twitch, category: ENTERTAINMENT}
+  com.audible.application: {display_name: Audible, category: ENTERTAINMENT}
+  com.pocketfm.app: {display_name: Pocket FM, category: ENTERTAINMENT}
+  com.kukufm.android: {display_name: Kuku FM, category: ENTERTAINMENT}
+  com.supercell.brawlstars: {display_name: Brawl Stars, category: ENTERTAINMENT}
+  com.dts.freefireth: {display_name: Free Fire, category: ENTERTAINMENT}
+  com.dts.freefiremax: {display_name: Free Fire MAX, category: ENTERTAINMENT}
+  com.activision.callofduty.shooter: {display_name: Call of Duty Mobile, category: ENTERTAINMENT}
+  com.kiloo.subwaysurf: {display_name: Subway Surfers, category: ENTERTAINMENT}
+  com.roblox.client: {display_name: Roblox, category: ENTERTAINMENT}
+  com.nianticlabs.pokemongo: {display_name: Pokemon GO, category: ENTERTAINMENT}
+  com.ludo.king: {display_name: Ludo King, category: ENTERTAINMENT}
+  com.mpl.android: {display_name: MPL, category: ENTERTAINMENT}
+  com.dream11.fantasy: {display_name: Dream11, category: ENTERTAINMENT}
+  com.google.android.apps.podcasts: {display_name: Google Podcasts, category: ENTERTAINMENT}
+
+  # --- COMMUNICATION ---
+  org.thoughtcrime.securesms: {display_name: Signal, category: COMMUNICATION}
+  com.whatsapp.w4b: {display_name: WhatsApp Business, category: COMMUNICATION}
+  com.google.android.apps.tachyon: {display_name: Google Meet, category: COMMUNICATION}
+  us.zoom.videomeetings: {display_name: Zoom, category: COMMUNICATION}
+  com.microsoft.teams: {display_name: Microsoft Teams, category: COMMUNICATION}
+  com.truecaller: {display_name: Truecaller, category: COMMUNICATION}
+  com.viber.voip: {display_name: Viber, category: COMMUNICATION}
+  jp.naver.line.android: {display_name: LINE, category: COMMUNICATION}
+  com.tencent.mm: {display_name: WeChat, category: COMMUNICATION}
+  com.facebook.orca: {display_name: Messenger, category: COMMUNICATION}
+  com.instagram.direct: {display_name: Instagram Direct, category: COMMUNICATION}
+  com.samsung.android.messaging: {display_name: Samsung Messages, category: COMMUNICATION}
+  com.yahoo.mobile.client.android.mail: {display_name: Yahoo Mail, category: COMMUNICATION}
+  com.google.android.apps.dynamite: {display_name: Google Chat, category: COMMUNICATION}
+
+  # --- PRODUCTIVE ---
+  com.microsoft.office.excel: {display_name: Excel, category: PRODUCTIVE}
+  com.microsoft.office.powerpoint: {display_name: PowerPoint, category: PRODUCTIVE}
+  com.microsoft.office.officehubrow: {display_name: Microsoft 365, category: PRODUCTIVE}
+  com.google.android.apps.docs.editors.slides: {display_name: Google Slides, category: PRODUCTIVE}
+  com.google.android.keep: {display_name: Google Keep, category: PRODUCTIVE}
+  com.microsoft.todos: {display_name: Microsoft To Do, category: PRODUCTIVE}
+  com.ticktick.task: {display_name: TickTick, category: PRODUCTIVE}
+  com.anydo: {display_name: Any.do, category: PRODUCTIVE}
+  md.obsidian: {display_name: Obsidian, category: PRODUCTIVE}
+  com.trello: {display_name: Trello, category: PRODUCTIVE}
+  com.asana.app: {display_name: Asana, category: PRODUCTIVE}
+  com.atlassian.android.jira.core: {display_name: Jira, category: PRODUCTIVE}
+  com.adobe.reader: {display_name: Adobe Acrobat, category: PRODUCTIVE}
+  com.google.android.apps.classroom: {display_name: Google Classroom, category: PRODUCTIVE}
+  org.khanacademy.android: {display_name: Khan Academy (alt), category: PRODUCTIVE}
+  com.udemy.android: {display_name: Udemy, category: PRODUCTIVE}
+  org.edx.mobile: {display_name: edX, category: PRODUCTIVE}
+  com.unacademy.consumption: {display_name: Unacademy, category: PRODUCTIVE}
+  com.byjus.thelearningapp: {display_name: BYJU'S, category: PRODUCTIVE}
+  com.physicswallah.app: {display_name: Physics Wallah, category: PRODUCTIVE}
+  com.leetcode.android: {display_name: LeetCode, category: PRODUCTIVE}
+  com.termux: {display_name: Termux, category: PRODUCTIVE}
+  com.google.android.apps.bard: {display_name: Gemini, category: PRODUCTIVE}
+  com.openai.chatgpt: {display_name: ChatGPT, category: PRODUCTIVE}
+  com.anthropic.claude: {display_name: Claude, category: PRODUCTIVE}
+  com.scanner.camscanner: {display_name: CamScanner, category: PRODUCTIVE}
+
+  # --- UTILITY ---
+  com.phonepe.app: {display_name: PhonePe, category: UTILITY}
+  net.one97.paytm: {display_name: Paytm, category: UTILITY}
+  com.google.android.apps.nbu.paisa.user: {display_name: Google Pay, category: UTILITY}
+  in.org.npci.upiapp: {display_name: BHIM, category: UTILITY}
+  com.application.zomato: {display_name: Zomato, category: UTILITY}
+  com.olacabs.customer: {display_name: Ola, category: UTILITY}
+  com.rapido.passenger: {display_name: Rapido, category: UTILITY}
+  in.redbus.android: {display_name: redBus, category: UTILITY}
+  com.makemytrip: {display_name: MakeMyTrip, category: UTILITY}
+  in.irctc.railconnect: {display_name: IRCTC Rail Connect, category: UTILITY}
+  cris.org.in.prs.ima: {display_name: IRCTC, category: UTILITY}
+  com.myntra.android: {display_name: Myntra, category: UTILITY}
+  com.meesho.supply: {display_name: Meesho, category: UTILITY}
+  com.grofers.customerapp: {display_name: Blinkit, category: UTILITY}
+  com.zeptoconsumerapp: {display_name: Zepto, category: UTILITY}
+  in.amazon.mShop.android.shopping.lite: {display_name: Amazon Lite, category: UTILITY}
+  com.android.vending: {display_name: Google Play Store, category: UTILITY}
+  com.google.android.apps.authenticator2: {display_name: Google Authenticator, category: UTILITY}
+  com.google.android.googlequicksearchbox: {display_name: Google, category: UTILITY}
+  com.google.android.apps.nbu.files.beta: {display_name: Files (beta), category: UTILITY}
+  com.google.android.apps.healthdata: {display_name: Health Connect, category: UTILITY}
+  com.google.android.apps.fitness: {display_name: Google Fit, category: UTILITY}
+  com.google.android.apps.walletnfcrel.beta: {display_name: Google Wallet (beta), category: UTILITY}
+  com.samsung.android.app.notes: {display_name: Samsung Notes, category: UTILITY}
+  com.sec.android.gallery3d: {display_name: Samsung Gallery, category: UTILITY}
+  com.miui.gallery: {display_name: Mi Gallery, category: UTILITY}
+  com.mi.android.globalFileexplorer: {display_name: Mi File Manager, category: UTILITY}
+  com.brave.browser: {display_name: Brave, category: UTILITY}
+  org.mozilla.firefox: {display_name: Firefox, category: UTILITY}
+  com.microsoft.emmx: {display_name: Edge, category: UTILITY}
+  com.opera.browser: {display_name: Opera, category: UTILITY}
+  com.sec.android.app.sbrowser: {display_name: Samsung Internet, category: UTILITY}
+  com.google.android.apps.maps.go: {display_name: Maps Go, category: UTILITY}
+  in.mapmyindia.mapmyindia: {display_name: MapmyIndia, category: UTILITY}
+  com.speedtest.android: {display_name: Speedtest, category: UTILITY}
+  com.nordvpn.android: {display_name: NordVPN, category: UTILITY}
+
+ignored_packages:
+  # Launchers / home screen
+  - com.android.launcher
+  - com.android.launcher3
+  - com.google.android.apps.nexuslauncher
+  - com.sec.android.app.launcher
+  - com.miui.home
+  - com.oppo.launcher
+  - com.bbk.launcher2
+  - com.realme.launcher
+  - com.oneplus.launcher
+  - com.microsoft.launcher
+  - net.oneplus.launcher
+  # System UI / shell
+  - com.android.systemui
+  - android
+  - com.android.settings.intelligence
+  - com.google.android.permissioncontroller
+  - com.android.permissioncontroller
+  - com.google.android.packageinstaller
+  - com.android.packageinstaller
+  - com.google.android.gms
+  - com.android.providers.media
+  - com.android.documentsui
+  - com.android.incallui
+  # Keyboards
+  - com.google.android.inputmethod.latin
+  - com.samsung.android.honeyboard
+  - com.touchtype.swiftkey
+  - com.google.android.inputmethod.indic
+  - com.android.inputmethod.latin
+  # Phone / dialer surfaces
+  - com.google.android.dialer
+  - com.samsung.android.dialer
+  - com.android.dialer
+  - com.android.phone
+  - com.android.server.telecom

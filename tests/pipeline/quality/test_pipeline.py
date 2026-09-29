@@ -133,3 +133,55 @@ class TestCustomOutlierBound:
 
         assert result.sessions[0].duration_sec == 50.0
         assert result.outlier_result.capped_count == 1
+
+class TestSystemAppFilter:
+    """System surfaces must not be scored as apps, and must not sit
+    between two real apps in the transition chain."""
+
+    def _ev(self, pkg, start_s, dur_s, sid):
+        from datetime import datetime, timedelta, timezone
+
+        from attention_tracker.schema.raw_event import EventType, RawEvent
+
+        t0 = datetime(2026, 8, 3, 10, 0, tzinfo=timezone.utc)
+        s = t0 + timedelta(seconds=start_s)
+        return [
+            RawEvent(user_id="u1", package_name=pkg, event_type=EventType.OPENED,
+                     timestamp=s, tz_offset_minutes=0),
+            RawEvent(user_id="u1", package_name=pkg, event_type=EventType.CLOSED,
+                     timestamp=s + timedelta(seconds=dur_s), tz_offset_minutes=0,
+                     session_duration_sec=float(dur_s), session_id=sid),
+        ]
+
+    def _stream(self):
+        return (
+            self._ev("com.instagram.android", 0, 60, "a")
+            + self._ev("com.android.launcher3", 100, 5, "launcher")
+            + self._ev("com.whatsapp", 200, 60, "b")
+        )
+
+    def test_without_taxonomy_launcher_is_kept(self):
+        result = run_data_quality_pipeline(self._stream())
+        assert {s.package_name for s in result.sessions} == {
+            "com.instagram.android", "com.android.launcher3", "com.whatsapp",
+        }
+        assert result.ignored_event_count == 0
+
+    def test_with_extended_taxonomy_launcher_is_dropped(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        result = run_data_quality_pipeline(self._stream(), taxonomy=tax)
+        assert {s.package_name for s in result.sessions} == {
+            "com.instagram.android", "com.whatsapp",
+        }
+        assert result.ignored_event_count == 2  # OPENED + CLOSED
+
+    def test_dropped_launcher_does_not_appear_in_transition_chain(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        result = run_data_quality_pipeline(self._stream(), taxonomy=tax)
+        by_pkg = {s.package_name: s for s in result.sessions}
+        assert by_pkg["com.whatsapp"].transition_from == "com.instagram.android"
+        assert by_pkg["com.instagram.android"].transition_to == "com.whatsapp"

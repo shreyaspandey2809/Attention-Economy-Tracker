@@ -75,3 +75,92 @@ class TestTaxonomyLoader:
         )
         with pytest.raises(TaxonomyLoadError):
             TaxonomyLoader(path=bad_file)
+
+class TestExtendedTaxonomy:
+    def test_default_loader_is_seed_only_and_ignores_nothing(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        default = TaxonomyLoader()
+        assert "com.phonepe.app" not in default
+        assert not default.is_ignored("com.android.launcher3")
+
+    def test_extended_adds_real_world_apps(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        assert len(tax) > len(TaxonomyLoader())
+        assert tax.lookup("com.phonepe.app").category == AppCategory.UTILITY
+        assert tax.lookup("com.sharechat.android").category == AppCategory.ADDICTIVE
+        assert tax.lookup("com.leetcode.android").category == AppCategory.PRODUCTIVE
+
+    def test_extended_never_overrides_a_seed_category(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        seed = TaxonomyLoader()
+        merged = TaxonomyLoader(include_extended=True)
+        for pkg, entry in seed._entries.items():  # noqa: SLF001
+            assert merged.lookup(pkg).category == entry.category
+
+    def test_system_surfaces_are_ignored(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        for pkg in (
+            "com.android.launcher3",
+            "com.android.systemui",
+            "com.google.android.inputmethod.latin",
+            "com.google.android.dialer",
+        ):
+            assert tax.is_ignored(pkg), pkg
+
+    def test_real_apps_are_not_ignored(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        assert not tax.is_ignored("com.instagram.android")
+        assert not tax.is_ignored("com.phonepe.app")
+
+    def test_no_package_is_both_categorized_and_ignored(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        assert not (tax._ignored & set(tax._entries))  # noqa: SLF001
+
+    def test_clash_between_apps_and_ignored_is_rejected(self, tmp_path):
+        from attention_tracker.schema.taxonomy_loader import (
+            TaxonomyLoader,
+            TaxonomyLoadError,
+        )
+
+        bad = tmp_path / "ext.yaml"
+        bad.write_text(
+            "apps:\n  com.foo: {display_name: Foo, category: UTILITY}\n"
+            "ignored_packages:\n  - com.foo\n"
+        )
+        with pytest.raises(TaxonomyLoadError, match="both categorized and ignored"):
+            TaxonomyLoader(include_extended=True, extended_path=bad)
+
+    def test_missing_extended_file_raises(self, tmp_path):
+        from attention_tracker.schema.taxonomy_loader import (
+            TaxonomyLoader,
+            TaxonomyLoadError,
+        )
+
+        with pytest.raises(TaxonomyLoadError, match="not found"):
+            TaxonomyLoader(include_extended=True, extended_path=tmp_path / "nope.yaml")
+
+    def test_realistic_indian_android_coverage_is_high(self):
+        from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+
+        tax = TaxonomyLoader(include_extended=True)
+        realistic = [
+            "com.whatsapp", "com.instagram.android", "com.google.android.youtube",
+            "in.startv.hotstar", "com.phonepe.app", "net.one97.paytm",
+            "com.application.zomato", "in.swiggy.android", "com.jio.jiotv",
+            "com.mxtech.videoplayer.ad", "com.google.android.apps.nbu.paisa.user",
+            "com.sharechat.android", "in.mohalla.video", "com.truecaller",
+            "com.android.vending", "com.miui.gallery", "com.myntra.android",
+            "com.linkedin.android", "com.spotify.music", "com.netflix.mediaclient",
+        ]
+        known = sum(1 for p in realistic if p in tax)
+        assert known / len(realistic) >= 0.9, f"only {known}/{len(realistic)} known"

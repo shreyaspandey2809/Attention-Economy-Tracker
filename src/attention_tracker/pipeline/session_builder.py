@@ -42,7 +42,6 @@ class SessionBuilder:
             if not queue:
                 unmatched_closes.append(event)
                 continue
-
             session: Session | None = None
             while queue:
                 open_event = queue.popleft()

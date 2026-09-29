@@ -158,6 +158,15 @@ class TestArchetypeSeparation:
 
 
 class TestLateNightHourDistribution:
+    """_sample_start_time's late-night window (hours 23, 0, 1, 2, 3)
+    draws each hour roughly equally: hour 0 is placed on the day
+    AFTER day_start (chronologically following 23:xx of day_start),
+    matching hours 1-3, not on the same day as hour 23. Placing hour 0
+    on the same day would sort it first in the day's start-time list,
+    where the non-overlap cursor (carried over from the previous
+    day's own late sessions, which already run past midnight) would
+    push it forward into hours 1-4 and skew the five hours away from
+    an even split."""
 
     def test_hour_0_is_not_systematically_starved(self, taxonomy: TaxonomyLoader):
         # Directly exercise the sampler (bypassing the cursor) across
@@ -165,6 +174,8 @@ class TestLateNightHourDistribution:
         gen = SyntheticEventGenerator(taxonomy=taxonomy, rng=random.Random(7))
         hour_counts = {h: 0 for h in (23, 0, 1, 2, 3)}
         for _ in range(20_000):
+            # Force the late-night branch by using a profile with
+            # late_night_session_fraction == 1.0.
             forced_late_night = replace(
                 DOOMSCROLLER, late_night_session_fraction=1.0
             )
@@ -174,6 +185,9 @@ class TestLateNightHourDistribution:
 
         total = sum(hour_counts.values())
         assert total == 20_000
+        # Each of the 5 hours should get roughly 1/5 of draws: hour 0
+        # is placed on day_start + 1 day (see _sample_start_time),
+        # keeping it chronologically after hour 23 rather than before it.
         for hour, count in hour_counts.items():
             share = count / total
             assert 0.15 < share < 0.25, (
@@ -184,6 +198,11 @@ class TestLateNightHourDistribution:
     def test_hour_0_lands_on_the_day_after_day_start(
         self, taxonomy: TaxonomyLoader
     ):
+        # hour 0 is chronologically part of the SAME late-night
+        # stretch as 23:00-03:59 the following morning, so it must be
+        # placed on day_start + 1 day, matching hours 1-3 — not on
+        # day_start itself (which would sort it before 23:00, not
+        # after).
         gen = SyntheticEventGenerator(taxonomy=taxonomy, rng=random.Random(0))
         forced_late_night = replace(DOOMSCROLLER, late_night_session_fraction=1.0)
         found_hour_0 = False
@@ -197,6 +216,10 @@ class TestLateNightHourDistribution:
     def test_full_day_generation_late_night_fraction_matches_profile_design(
         self, taxonomy: TaxonomyLoader
     ):
+        # End-to-end regression guard: the aggregate late-night
+        # fraction across a full multi-day generation should land
+        # close to the archetype's designed value — the per-hour
+        # tests above check the shape underneath that aggregate.
         gen = SyntheticEventGenerator(taxonomy=taxonomy, rng=random.Random(3))
         events = gen.generate("user_doom", DOOMSCROLLER, DAY_START, num_days=30)
         opens = [e for e in events if e.event_type == EventType.OPENED]

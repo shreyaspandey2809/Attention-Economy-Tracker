@@ -74,11 +74,9 @@ original design.
 ```
 
 Everything above the `mock_backend` box is real project logic, fully
-tested (220 tests as of the Phase 0 review pass — 191 through M4,
-plus 29 added while fixing the bugs described in "Phase 0 review
-findings" below). `mock_backend` and the Android app are demo/
-integration layers — they call the real pipeline but are not
-themselves M8 or M9's actual scope (see "What's a stand-in" below).
+tested (318 tests). `mock_backend` and the Android
+app are demo/integration layers — they call the real pipeline but are
+not themselves M8 or M9's actual scope (see "What's a stand-in" below).
 
 ## Module reference
 
@@ -95,13 +93,10 @@ builds on.
   OPENED+CLOSED pair, with `transition_from`/`transition_to` for the
   apps immediately before/after. Validates internal consistency
   (`end_time - start_time == duration_sec`, within float slack).
-  Carries `tz_offset_minutes` (Phase 0 addition — taken from the
-  closing event, the most recent offset available) and exposes
-  `local_start_time`, a computed property applying that offset to
-  `start_time`. Every temporal feature and windowing decision should
-  read `local_start_time`, not `start_time`, directly: `start_time` is
-  always UTC and is only correct for a UTC user (see "Phase 0 review
-  findings" below for the bug this fixed).
+  Carries `tz_offset_minutes` (from the closing event) and exposes
+  `local_start_time`, the UTC `start_time` shifted by that offset.
+  Temporal features and windowing read `local_start_time`;
+  `start_time` itself is always UTC.
 - **`app_metadata.py`** — `AppCategory` enum (PRODUCTIVE, ADDICTIVE,
   ENTERTAINMENT, COMMUNICATION, UTILITY, UNKNOWN).
 - **`app_metadata_entry.py`** — `AppMetadataEntry`, the validated shape
@@ -110,7 +105,14 @@ builds on.
   `config/app_taxonomy.yaml` and exposes `.lookup(package_name)`,
   falling back to `AppCategory.UNKNOWN` for unrecognized packages
   rather than raising (imports `app_metadata.py`,
-  `app_metadata_entry.py`).
+  `app_metadata_entry.py`). `TaxonomyLoader(include_extended=True)`
+  also merges `config/app_taxonomy_extended.yaml`: ~115 further
+  real-device apps (Indian and global), with the seed winning on any
+  overlap, plus an `ignored_packages` list of system surfaces
+  (launchers, system UI, keyboards, dialers, installers) exposed via
+  `is_ignored()`. The default loader stays seed-only because the
+  synthetic generator draws apps by category from it. The extended
+  layer is for lookups against real device data.
 
 ### `synthetic/` — fabricates realistic event streams for testing
 
@@ -124,52 +126,34 @@ Depends on `schema/` only.
   `.generate()` / `.generate_population()` produce `RawEvent` streams
   from an `ArchetypeProfile`. Imports `schema/raw_event.py`,
   `schema/app_metadata.py`, `schema/taxonomy_loader.py`, and
-  `synthetic/archetypes.py`. **Phase 0 fix:** `_sample_start_time`'s
-  late-night window (hours 23, 0, 1, 2, 3) placed hour 0 on the same
-  calendar day as hour 23 instead of the day after — chronologically
-  wrong, since 00:xx comes after 23:xx, not before it. This put
-  hour-0 draws first (not last) in the day's sorted start-time list,
-  where the non-overlap cursor (already past midnight from the
-  previous day's own late sessions) clamped nearly all of them
-  forward into hours 1-4. Measured before the fix (DOOMSCROLLER, 30
-  days, seed 3): hour 0 received 0 of ~140 late-night draws where an
-  even split predicts ~28, and hours 1-4 were inflated roughly 3-4x
-  relative to hour 23. The archetype-level `late_night_session_fraction`
-  check (~0.36 vs. designed 0.35, see M3 section below) passed
-  throughout — it only validates the aggregate rate, not the
-  per-hour shape, which is why this shipped past the existing tests.
+  `synthetic/archetypes.py`. Late-night starts draw hours
+  23, 0, 1, 2, 3 evenly; hour 23 falls on the base day and hours 0-3
+  on the following day.
 
 ### `pipeline/quality/` — cleans the raw event/session stream
 
 - **`dedup.py`** — `dedupe_events()`. Removes duplicate `RawEvent`s:
   `session_id` as idempotency key for terminal events, exact
   `(user_id, package_name, timestamp)` match for opening events that
-  have none yet. Depends on `schema/raw_event.py` only. **Known gap**
-  (investigated in Phase 0, deliberately not changed): the exact
-  timestamp match has no tolerance, so a real retry with even 1ms of
-  clock jitter would slip through undeduped. Not fixed here because
-  there's no real device data yet to say what genuine retry jitter
-  looks like vs. two legitimate rapid re-opens a second apart (which
-  an existing test intentionally treats as distinct events, not
-  duplicates) — picking a tolerance constant now would be a guess.
-  Revisit under M9.
+  have none yet. Depends on `schema/raw_event.py` only. The match is
+  exact (no tolerance window), since no real-device retry timing
+  exists yet to calibrate one against; revisit under M9.
 - **`outliers.py`** — `cap_session_outliers()`. Caps session durations
   at a device-plausibility bound (`MAX_PLAUSIBLE_SESSION_SEC`, 4
   hours) rather than a statistical percentile, so genuine heavy-usage
   days aren't clipped alongside measurement errors. Depends on
-  `schema/session.py` only. **Phase 0 addition:** also returns
-  `overlapping_session_ids`, pairs of same-user sessions whose
-  intervals overlap after capping — physically impossible for one
-  person's foreground app. This surfaces the problem rather than
-  correcting it (there's no way to know which of two overlapping
-  sessions is "real" from duration alone); the sweep tracks the
-  running-latest end time seen so far per user, not just each
-  session's immediate neighbor by start time, so a long session fully
-  containing two shorter, mutually non-overlapping sessions still
-  flags both.
+  `schema/session.py` only. Also returns `overlapping_session_ids`:
+  same-user session pairs whose intervals still overlap after
+  capping. Reported, not corrected — duration alone can't say which
+  of two overlapping sessions is real. The sweep tracks the latest
+  end time seen so far per user, so a long session containing two
+  shorter non-overlapping ones flags both.
 - **`pipeline.py`** — `run_data_quality_pipeline()`. The orchestration
   point: dedup → `SessionBuilder.build()` → outlier capping, in that
-  fixed order, as one callable. This is the only place that ordering
+  fixed order, as one callable. When given a taxonomy it drops
+  system-app events between dedup and session building. That
+  ordering matters: a launcher session left in place would sit
+  between two real apps in `transition_from`/`transition_to`. This is the only place that ordering
   logic lives; every other caller (the demo script, `mock_backend`)
   calls this function rather than re-chaining the three stages.
   Depends on `dedup.py`, `outliers.py`, `pipeline/session_builder.py`,
@@ -182,10 +166,8 @@ Depends on `schema/` only.
   Android sync heartbeat, which doesn't exist yet. Takes the full
   `list[Session]` for one user-day (not a
   `group_sessions_by_user_app_day()` output, which is scoped to one
-  app). Depends on `schema/session.py` only. The `result.day` label
-  is computed from `local_start_time` as of Phase 0 (was UTC day,
-  wrong for non-UTC users — same underlying bug as `windowing.py`
-  below).
+  app). Depends on `schema/session.py` only. `result.day` is the
+  user's local calendar day.
 
 ### `pipeline/` (top level) — turns events into sessions, sessions into windows
 
@@ -195,36 +177,32 @@ Depends on `schema/` only.
   chronologically (not per-window — this is why
   `productive_interruption_rate` can read a pre-computed value rather
   than needing cross-window context itself). Depends on
-  `schema/raw_event.py`, `schema/session.py`. **Phase 0 fix:** a
-  FIFO-matched pair that fails `Session`'s own validation (duration
-  disagreeing with timestamps by more than 1 second — realistically,
-  a crash or force-stop losing an event and leaving a stale open at
-  the front of the queue) used to raise out of `build()`, discarding
-  every session in the whole batch, not just the bad pair. Now
-  recorded in `SessionBuildResult.rejected_pairs`, and the builder
-  tries the next-oldest pending open for the same key before giving
-  up on the close — so one bad pair no longer swallows a legitimate
-  session queued behind it. A rejected open is permanently discarded
-  (not returned to the queue): having already failed validation once,
-  retrying it later would either fail the same way or wrongly pair it
-  with an unrelated session.
+  `schema/raw_event.py`, `schema/session.py`. A matched pair that
+  fails `Session` validation goes to `SessionBuildResult.rejected_pairs`
+  instead of aborting the batch, and the builder tries the next-oldest
+  pending open for that key. A rejected open is dropped, not
+  re-queued, and is not also listed in `unmatched_opens`.
 - **`windowing.py`** — `group_sessions_by_user_app_day()`. Groups a
   flat `list[Session]` into `dict[(user, package, day), list[Session]]`,
-  pre-sorted by `local_start_time` within each group (Phase 0 fix —
-  was keyed on UTC day; see `session.py` above). Depends on
-  `schema/session.py` only. **Known gap** (investigated in Phase 0,
-  deliberately not fixed here): a session's *entire* duration is
-  attributed to its local *start* day even when it runs past local
-  midnight — e.g. a 23:50-00:20 session credits all 30 minutes to the
-  earlier day. Measured at roughly 0.01%-1.3% of sessions depending on
-  archetype (DOOMSCROLLER most affected, since it specifically models
-  late-night use). Not fixed here because a correct fix means
-  splitting one `Session` into two window-membership records without
-  violating `Session`'s own start/end/duration invariant, and this
-  function's current return shape (whole `Session` lists) is consumed
-  as-is by 4 other test suites and every function in
-  `pipeline/features/` — a bigger, riskier change deserving its own
-  reviewed pass rather than one folded into this fix set.
+  pre-sorted by `local_start_time` within each group. Depends on
+  `schema/session.py` only. A session's full duration is attributed
+  to its local start day, even if it runs past local midnight.
+  `group_sessions_by_user_app_week()` groups on the Monday of the
+  session's local ISO week instead. A one-day window can only see one
+  weekday, so `weekend_usage_ratio` there is 0 or 1; over a week it is
+  a real share of time, and interarrival and entropy get more than one
+  session to work with (roughly half as many single-session windows on
+  the synthetic archetypes).
+- **`sequences.py`** — `build_day_sequences()`. One ordered sequence
+  per user per local day across ALL apps, the input shape M6's LSTM
+  needs (the M3 windows are per-app bags with no cross-app order).
+  Each step is a fixed numeric vector: `log1p` duration, `log1p` gap
+  since the previous session (clipped at 6 h), cyclic hour-of-day
+  (sin/cos), weekend flag, app-switch flag, and a category one-hot.
+  Sequences are padded to `max_len` with a mask; truncation keeps the
+  last steps and reports how many were dropped. Plain lists, no
+  torch/numpy. Depends on `schema/session.py`,
+  `schema/taxonomy_loader.py`.
 
 ### `pipeline/features/` — computes behavioral features per window
 
@@ -274,9 +252,17 @@ themselves — grouping is the caller's job.
 - **`heuristic.py`** — `compute_heuristic_score()`. Normalizes each
   `FeatureVector` field to [0, 1] and combines via `config.py`'s
   weights into a 0-10 score. Requires the app's `AppCategory` as an
-  explicit input (not looked up internally) to apply a
-  `productive_app_dampener` — the fix for the `DEEP_WORKER` finding
-  above. This score is the M5 LightGBM training TARGET, since no true
+  explicit input (not looked up internally). The category acts in two
+  places: `productive_app_dampener` scales the volume and entropy
+  terms for PRODUCTIVE apps, and `NormalizationBounds.category_multipliers`
+  scales the final score by how attention-capturing the category is
+  (ADDICTIVE 1.0, ENTERTAINMENT 0.85, COMMUNICATION and UNKNOWN 0.7,
+  UTILITY 0.5, PRODUCTIVE 0.3), so identical behavior scores higher
+  on a feed than on a document editor. The multipliers are chosen,
+  not derived. Features that are undefined for a one-session window
+  (`interarrival_under_2min_ratio` is `None`; `hourly_usage_entropy`
+  is meaningless) are left out and the remaining weights renormalized,
+  rather than scored as 0 or as "perfectly concentrated". This score is the M5 LightGBM training TARGET, since no true
   ground-truth addiction label exists. Depends on
   `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   `scoring/config.py`.
@@ -284,6 +270,30 @@ themselves — grouping is the caller's job.
   see `tests/scoring/test_heuristic.py`, run across all five
   archetypes and 30 seeds each at a 27/30 pass-rate bar, matching the
   rigor used for the M3 interarrival-statistic fix.
+
+### `evaluation/` — what a score is allowed to claim
+
+Depends on nothing else in the package; pure Python.
+
+- **`labels.py`** — `SasSvResponse`: one participant's SAS-SV answers
+  (10 items, 1-6, total 10-60) linked by pseudonymous `user_id`, with
+  the published sex-specific cut-offs (31 male, 33 female, at or
+  above). Sex unspecified gives no binary flag, because a cut-off
+  would have to be guessed. Item wording is not reproduced. Cut-offs
+  come from Korean adolescents, so the continuous total is the
+  primary quantity. Holds no data.
+- **`validation.py`** — two deliberately separate checks.
+  `score_vs_label_validity()` is construct validity: Spearman rank
+  correlation between a per-user score and a per-user SAS-SV total,
+  with a bootstrap interval over resampled users, refusing to
+  interpret fewer than 20 users and stating in words whether the
+  interval shows tracking, no relationship, or an inverse one.
+  `distillation_report()` measures how well a model reproduces the
+  heuristic and always carries a caveat saying it is not accuracy:
+  the heuristic is a deterministic function of the model's own
+  inputs, and a plain linear fit on those inputs already reaches
+  R² ≈ 0.94 on held-out synthetic users.
+- Protocol for collecting the labels: `docs/validation_protocol.md`.
 
 ### `mock_backend/` — demo integration layer (not the real M8 backend)
 
@@ -298,15 +308,9 @@ themselves — grouping is the caller's job.
   `pipeline/quality/completeness.py`, `pipeline/windowing.py`,
   `pipeline/features/feature_vector.py`, `scoring/heuristic.py`,
   `schema/taxonomy_loader.py`. Response includes
-  `rejected_pairs_count` and `overlapping_sessions_count` (Phase 0
-  additions, surfacing `SessionBuilder.rejected_pairs` and
-  `OutlierCapResult.overlapping_session_ids`) — always 0 against the
-  synthetic generator today, wired through now so M9's real device
-  data doesn't need a second API change to expose them. `fastapi` /
-  `uvicorn` / `httpx` are declared in `requirements.txt` and
-  `pyproject.toml`'s `backend`/`test` extras as of Phase 0 — a fresh
-  clone previously had no way to run this service or its tests
-  without a manual, undocumented `pip install`.
+  `rejected_pairs_count` and `overlapping_sessions_count`. Requires
+  `fastapi`, `uvicorn`, `httpx` (in `requirements.txt`). Covered by
+  `tests/mock_backend/`.
 
 ### `attention-collector-android/` — demo Android client (not the real M9 collector)
 

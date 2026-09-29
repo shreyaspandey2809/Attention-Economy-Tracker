@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from attention_tracker.schema.app_metadata import AppCategory
 
 
 @dataclass(frozen=True)
@@ -29,11 +31,25 @@ class HeuristicWeights:
             )
 
 
+def _default_category_multipliers() -> dict[AppCategory, float]:
+    return {
+        AppCategory.ADDICTIVE: 1.0,
+        AppCategory.ENTERTAINMENT: 0.85,
+        AppCategory.COMMUNICATION: 0.7,
+        AppCategory.UNKNOWN: 0.7,
+        AppCategory.UTILITY: 0.5,
+        AppCategory.PRODUCTIVE: 0.3,
+    }
+
+
 @dataclass(frozen=True)
 class NormalizationBounds:
     total_time_sec_cap: float = 7200.0  # 2 hours
     session_count_cap: float = 60.0  # COMPULSIVE_CHECKER's designed mean
     productive_app_dampener: float = 0.3
+    category_multipliers: dict[AppCategory, float] = field(
+        default_factory=_default_category_multipliers
+    )
 
 
 DEFAULT_WEIGHTS = HeuristicWeights()

@@ -142,3 +142,120 @@ class TestScoreRange:
                     assert 0.0 <= score <= 10.0, (
                         f"{name} produced out-of-range score {score}"
                     )
+
+def _fv(**overrides):
+    """Hand-built FeatureVector so scoring rules can be tested without
+    running the whole synthetic pipeline."""
+    from attention_tracker.pipeline.features.feature_vector import FeatureVector
+
+    base = dict(
+        user_id="u1",
+        package_name="com.example",
+        total_time_sec=1800.0,
+        session_count=10,
+        avg_session_duration_sec=180.0,
+        max_session_duration_sec=600.0,
+        sessions_under_30s_ratio=0.2,
+        interarrival_mean_sec=300.0,
+        interarrival_under_2min_ratio=0.3,
+        late_night_usage_pct=0.1,
+        late_night_usage_time_ratio=0.1,
+        hourly_usage_entropy=0.6,
+        weekend_usage_ratio=0.0,
+        productive_interruption_rate=0.1,
+    )
+    base.update(overrides)
+    return FeatureVector(**base)
+
+
+class TestCategoryMultiplier:
+    """The app's category must change the score, not just PRODUCTIVE."""
+
+    def test_same_behavior_scores_higher_on_addictive_than_productive(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        fv = _fv()
+        addictive = compute_heuristic_score(fv, AppCategory.ADDICTIVE)
+        productive = compute_heuristic_score(fv, AppCategory.PRODUCTIVE)
+        assert addictive > productive
+
+    def test_category_ordering_matches_design_intent(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        fv = _fv()
+        score = lambda c: compute_heuristic_score(fv, c)  # noqa: E731
+        assert (
+            score(AppCategory.ADDICTIVE)
+            > score(AppCategory.ENTERTAINMENT)
+            > score(AppCategory.COMMUNICATION)
+            > score(AppCategory.UTILITY)
+            > score(AppCategory.PRODUCTIVE)
+        )
+
+    def test_unknown_is_not_scored_as_maximally_risky(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        fv = _fv()
+        assert compute_heuristic_score(fv, AppCategory.UNKNOWN) < (
+            compute_heuristic_score(fv, AppCategory.ADDICTIVE)
+        )
+
+    def test_score_stays_within_zero_to_ten(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        extreme = _fv(
+            total_time_sec=1e9,
+            session_count=10_000,
+            sessions_under_30s_ratio=1.0,
+            interarrival_under_2min_ratio=1.0,
+            late_night_usage_time_ratio=1.0,
+            weekend_usage_ratio=1.0,
+            hourly_usage_entropy=0.0,
+            productive_interruption_rate=1.0,
+        )
+        for category in AppCategory:
+            assert 0.0 <= compute_heuristic_score(extreme, category) <= 10.0
+
+
+class TestUndefinedFeaturesAreNotScoredAsMeasured:
+    """A one-session window has no gap and no habit shape. Those
+    features must be left out, not counted as 0 or as 'maximally
+    concentrated'."""
+
+    def test_none_interarrival_is_not_treated_as_zero(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        # Everything else equal, dropping a 0-valued term and
+        # renormalizing must not LOWER the score of a window whose
+        # other features are all high.
+        high = dict(
+            sessions_under_30s_ratio=0.9,
+            late_night_usage_time_ratio=0.9,
+            weekend_usage_ratio=1.0,
+            productive_interruption_rate=0.9,
+        )
+        with_none = _fv(interarrival_under_2min_ratio=None, **high)
+        with_zero = _fv(interarrival_under_2min_ratio=0.0, **high)
+        assert compute_heuristic_score(
+            with_none, AppCategory.ADDICTIVE
+        ) > compute_heuristic_score(with_zero, AppCategory.ADDICTIVE)
+
+    def test_single_session_entropy_does_not_change_score(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        # With one session, entropy is undefined. Two different
+        # entropy values must produce the same score.
+        a = _fv(session_count=1, interarrival_under_2min_ratio=None, hourly_usage_entropy=0.0)
+        b = _fv(session_count=1, interarrival_under_2min_ratio=None, hourly_usage_entropy=0.9)
+        assert compute_heuristic_score(a, AppCategory.ADDICTIVE) == pytest.approx(
+            compute_heuristic_score(b, AppCategory.ADDICTIVE)
+        )
+
+    def test_multi_session_entropy_still_matters(self):
+        from attention_tracker.schema.app_metadata import AppCategory
+
+        low = _fv(hourly_usage_entropy=0.0)
+        high = _fv(hourly_usage_entropy=0.9)
+        assert compute_heuristic_score(
+            low, AppCategory.ADDICTIVE
+        ) > compute_heuristic_score(high, AppCategory.ADDICTIVE)

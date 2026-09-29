@@ -32,22 +32,37 @@ def compute_heuristic_score(
 ) -> float:
     is_productive = app_category == AppCategory.PRODUCTIVE
     dampener = bounds.productive_app_dampener if is_productive else 1.0
+    single_session = fv.session_count < 2
 
-    normalized_total_time = _normalize_total_time_sec(fv.total_time_sec, bounds) * dampener
-    normalized_session_count = _normalize_session_count(fv.session_count, bounds)
-    normalized_entropy = (
-        _normalize_hourly_usage_entropy_inverted(fv.hourly_usage_entropy) * dampener
-    )
+    terms: list[tuple[float, float]] = [
+        (
+            weights.total_time_sec,
+            _normalize_total_time_sec(fv.total_time_sec, bounds) * dampener,
+        ),
+        (
+            weights.session_count,
+            _normalize_session_count(fv.session_count, bounds),
+        ),
+        (weights.sessions_under_30s_ratio, fv.sessions_under_30s_ratio),
+        (weights.late_night_usage_time_ratio, fv.late_night_usage_time_ratio),
+        (weights.weekend_usage_ratio, fv.weekend_usage_ratio),
+        (weights.productive_interruption_rate, fv.productive_interruption_rate),
+    ]
+    if fv.interarrival_under_2min_ratio is not None:
+        terms.append(
+            (weights.interarrival_under_2min_ratio, fv.interarrival_under_2min_ratio)
+        )
+    if not single_session:
+        terms.append(
+            (
+                weights.hourly_usage_entropy,
+                _normalize_hourly_usage_entropy_inverted(fv.hourly_usage_entropy)
+                * dampener,
+            )
+        )
 
-    weighted_sum = (
-        weights.total_time_sec * normalized_total_time
-        + weights.session_count * normalized_session_count
-        + weights.sessions_under_30s_ratio * fv.sessions_under_30s_ratio
-        + weights.interarrival_under_2min_ratio
-        * (fv.interarrival_under_2min_ratio or 0.0)
-        + weights.late_night_usage_time_ratio * fv.late_night_usage_time_ratio
-        + weights.weekend_usage_ratio * fv.weekend_usage_ratio
-        + weights.hourly_usage_entropy * normalized_entropy
-        + weights.productive_interruption_rate * fv.productive_interruption_rate
-    )
-    return weighted_sum * 10.0
+    weight_total = sum(w for w, _ in terms)
+    weighted_sum = sum(w * v for w, v in terms) / weight_total
+
+    multiplier = bounds.category_multipliers.get(app_category, 1.0)
+    return weighted_sum * multiplier * 10.0

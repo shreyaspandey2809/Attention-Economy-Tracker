@@ -26,7 +26,11 @@ map and data-flow diagram. Build runs in four phases:
 - [x] M3: `SessionBuilder` — joins OPENED/CLOSED event pairs into
       `Session` records via FIFO pairing per (user, package), with
       `transition_from` / `transition_to` from each user's
-      chronological session order
+      chronological session order. Each `Session` carries the closing
+      event's `tz_offset_minutes` and exposes `local_start_time`. A
+      pair that fails `Session` validation is recorded in
+      `rejected_pairs` rather than aborting the batch, and the
+      builder falls through to the next-oldest pending open
 - [x] **Bugfix found during Session Builder testing:** the synthetic
       generator (M2) could produce overlapping sessions — physically
       impossible on a real device (only one app can be in the
@@ -40,7 +44,7 @@ map and data-flow diagram. Build runs in four phases:
       were implemented. Added `COMPULSIVE_CHECKER` (very high session
       count, each session short) to close the gap, validated against
       Doomscroller (longer, less frequent sessions) at scale.
-- [x] Data-quality stage (State-and-Plan Sec. 2) — added after
+- [x] Data-quality stage — added after
       discovering it needed to exist *before* Temporal/Transition
       features, since noisy or duplicate input would corrupt every
       feature computed on top of it:
@@ -52,7 +56,9 @@ map and data-flow diagram. Build runs in four phases:
     device-plausibility bound (4 hours), not a statistical
     percentile, so genuine heavy-usage days (Doomscroller,
     Binge Weekend) aren't clipped alongside measurement errors (e.g.
-    a stale wake-lock producing a 14-hour "session")
+    a stale wake-lock producing a 14-hour "session"). Also reports
+    any same-user sessions that still overlap after capping
+    (`overlapping_session_ids`)
   - `pipeline/quality/pipeline.py` — orchestrates dedup → session
     building → outlier capping as one callable stage, so the fix
     actually runs in the pipeline rather than existing only as
@@ -64,9 +70,9 @@ map and data-flow diagram. Build runs in four phases:
     needs M9's real Android sync-heartbeat signal, which doesn't exist
     yet. Explicitly designed to be replaced (not just kept around) once
     M9 lands.
-- [x] M3: `windowing.py` — groups sessions by (user, app, calendar
-      day), pre-sorted by start_time, as the shared grouping every
-      feature function builds on
+- [x] M3: `windowing.py` — groups sessions by (user, app, local
+      calendar day), pre-sorted by local start time, as the shared
+      grouping every feature function builds on
 - [x] M3: Volume features (`volume.py`) — `total_time_sec`,
       `session_count`, `avg_session_duration_sec`,
       `max_session_duration_sec`
@@ -84,7 +90,8 @@ map and data-flow diagram. Build runs in four phases:
       pooling gaps across a 15-user population instead of one user,
       using the quick-return ratio the compulsiveness features were
       actually designed to support — stable across 50/50 seeds tested.
-- [x] M3: Temporal features (`temporal.py`) — `late_night_usage_pct`
+- [x] M3: Temporal features (`temporal.py`) — computed from the
+      user's local time, not UTC. `late_night_usage_pct`
       (23:00-04:00, matching the generator's own late-night window),
       `hourly_usage_entropy` (Shannon entropy over hour-of-day,
       normalized to [0,1]), `weekend_usage_ratio` (duration-weighted).
@@ -103,7 +110,7 @@ map and data-flow diagram. Build runs in four phases:
       training data), and `mock_backend`'s API response all build on
       from here on, rather than each caller re-assembling individual
       feature calls separately.
-- [x] Unit tests: 191 passing total
+- [x] Unit tests: 318 passing total
 - [x] **External review response** — an outside review of the
       project's scientific validity identified 37 numbered
       weaknesses. Addressed the fixable ones directly:
@@ -146,7 +153,9 @@ map and data-flow diagram. Build runs in four phases:
       end-to-end: synthetic generation → dedup → session building →
       outlier capping → completeness assessment → windowing → full
       `FeatureVector` computation → M4 heuristic scoring, exposed via
-      `POST /simulate-day`. Nothing in its response is fabricated —
+      `POST /simulate-day`, including `rejected_pairs_count` and
+      `overlapping_sessions_count` diagnostics. Covered by
+      `tests/mock_backend/`. Nothing in its response is fabricated —
       it's the real M1-M4 pipeline with no persistence layer yet.
       LightGBM/LSTM/autoencoder/SHAP fields will be added here as
       M5-M7 are built.
@@ -194,6 +203,50 @@ map and data-flow diagram. Build runs in four phases:
     no true ground-truth label exists — M5 learns a smoother
     approximation of this heuristic, not "true addiction."
 
+- [x] Scoring uses the app's category, not just PRODUCTIVE-vs-rest:
+      `NormalizationBounds.category_multipliers` scales the final score
+      (ADDICTIVE 1.0, ENTERTAINMENT 0.85, COMMUNICATION and UNKNOWN 0.7,
+      UTILITY 0.5, PRODUCTIVE 0.3), so the same behavior scores higher
+      on a feed than on a document editor. Multipliers are chosen, not
+      derived. Features undefined for a one-session window
+      (`interarrival_under_2min_ratio`, `hourly_usage_entropy`) are
+      left out and the remaining weights renormalized.
+- [x] `group_sessions_by_user_app_week()` — (user, app, ISO-week)
+      windows. Over a week `weekend_usage_ratio` is a real share of
+      time (a one-day window can only give 0 or 1), and single-session
+      windows roughly halve.
+- [x] Weight-sensitivity suite extended: every weight perturbed by
+      ±25% and ±50% (ordering held in all cases), the full
+      five-archetype ordering, and random weight vectors. With fully
+      random weights the ordering broke in 5 of 15 draws, always when
+      one signal dominated (late-night dominant lets `DOOMSCROLLER`
+      overtake `COMPULSIVE_CHECKER`; productive-interruption dominant
+      lets `DEEP_WORKER` overtake `DOOMSCROLLER`). The ordering is
+      robust to proportional re-weighting, not to letting one feature
+      dominate; both cases are pinned by tests.
+- [x] `config/app_taxonomy_extended.yaml` — ~115 real-device apps
+      (Indian and global) plus an `ignored_packages` list of system
+      surfaces (launchers, system UI, keyboards, dialers, installers).
+      Opt in with `TaxonomyLoader(include_extended=True)`; the default
+      loader stays seed-only because the synthetic generator draws
+      from it. Coverage of a 20-app realistic Indian Android sample:
+      95%+ (seed alone: 28%). `run_data_quality_pipeline(taxonomy=...)`
+      drops system-app events before session building so they do not
+      appear in the transition chain.
+- [x] `pipeline/sequences.py` — one ordered sequence per user per local
+      day across all apps (log duration, log gap, cyclic hour, weekend,
+      app-switch, category one-hot; padded with a mask), the input M6's
+      LSTM needs.
+- [x] `evaluation/` — SAS-SV self-report label ingestion
+      (`labels.py`) and validation metrics (`validation.py`): rank
+      correlation between a per-user score and a per-user SAS-SV total
+      with a bootstrap interval, and a distillation report that always
+      states it is not accuracy. A plain linear fit on the heuristic's
+      own inputs reaches R² ≈ 0.94 on held-out synthetic users, so
+      agreement with the heuristic is expected and proves nothing about
+      real problematic use. How to collect the labels:
+      [`docs/validation_protocol.md`](docs/validation_protocol.md).
+
 ## Setup
 
 ```bash
@@ -213,8 +266,10 @@ pytest
 
 ```
 src/attention_tracker/          # all package code, organized by module (M1-M10)
+                                  # incl. evaluation/ (labels + validation metrics)
 tests/                           # mirrors src/ — one test module per source module
-config/                          # YAML configs, populated during Phase 3 (Ch. 9.2)
+config/                          # app taxonomies (seed + extended); more YAML in Phase 3
+docs/                            # architecture.md, validation_protocol.md
 mock_backend/                    # FastAPI demo service running the real pipeline
                                   # end-to-end (not the real M8 backend — no
                                   # persistence, no auth; a stand-in until M8 exists)
@@ -264,10 +319,10 @@ printed output at every stage.
 
 `mock_backend/` and `attention-collector-android/` together let you
 see the pipeline's output on an actual (emulated) phone screen, ahead
-of the real M8/M9 milestones existing:
+of the real M8/M9 milestones existing. `fastapi`, `uvicorn` and
+`httpx` come from `requirements.txt` (see [Setup](#setup)):
 
 ```bash
-pip install fastapi uvicorn
 uvicorn mock_backend.main:app --port 8000
 ```
 
