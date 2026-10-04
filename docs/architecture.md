@@ -414,14 +414,6 @@ card) and the day's completeness assessment, with a visually separate
 doesn't exist yet. Does not read real on-device usage data — see
 "What's a stand-in" below.
 
-### Continuous integration
-
-`.github/workflows/ci.yml` runs on every push: a fresh Python 3.11 and
-3.13 environment, `pip install -e ".[test]"` (from `pyproject.toml`
-only, so a dependency missing there fails CI), `ruff check`, `pytest`.
-Ruff is configured for syntax errors and unused code only
-(`[tool.ruff]` in `pyproject.toml`); widen it later.
-
 ### Reserved, not yet implemented
 
 These packages exist as empty scaffolding (`__init__.py` only) for

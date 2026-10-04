@@ -17,9 +17,8 @@ Newest first. Older milestones (M1–M5) are in the log at the bottom.
   fires at ~230 rounds (it previously ran into the 200-round cap).
   Test R² against the heuristic: addiction 0.989, distraction 0.981
   (still a distillation score, not accuracy).
-- Added: GitHub Actions CI (Python 3.11 and 3.13, installs from
-  `pyproject.toml` only, ruff + pytest) and a minimal ruff config
-  (syntax errors and unused code); removed 7 unused imports it found.
+- Added: a minimal ruff config in `pyproject.toml` (syntax errors and
+  unused code only); removed 7 unused imports it found.
 - Moved: the long running status log from README to this file.
 - Tests: 322 passing.
 

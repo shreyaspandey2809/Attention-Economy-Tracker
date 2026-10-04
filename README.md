@@ -59,8 +59,7 @@ pytest
 ruff check src tests mock_backend
 ```
 
-CI runs both on every push (Python 3.11 and 3.13), installing from
-`pyproject.toml` only: `pip install -e ".[test]"`.
+Install with `pip install -e ".[test]"` to get everything the tests need.
 
 ## Project layout
 
