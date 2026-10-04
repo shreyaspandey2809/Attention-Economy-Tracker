@@ -1,3 +1,4 @@
+import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -39,7 +40,9 @@ def build_synthetic_distillation_dataset(
     for archetype in config.archetypes:
         for seed in range(seed_offset, seed_offset + config.seeds_per_archetype):
             user_id = f"synth_{archetype.name}_{seed:05d}"
-            rng = random.Random(seed * 7919 + hash(archetype.name) % 10_000)
+            # crc32, not hash(): str hashes are randomized per process
+            # (PYTHONHASHSEED), which made the dataset differ between runs.
+            rng = random.Random(seed * 7919 + zlib.crc32(archetype.name.encode()) % 10_000)
             generator = SyntheticEventGenerator(taxonomy=config.taxonomy, rng=rng)
             events = generator.generate(
                 user_id=user_id,

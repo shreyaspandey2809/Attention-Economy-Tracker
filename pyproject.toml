@@ -5,6 +5,7 @@ description = "Attention Economy Tracker — behavioral analytics for smartphone
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -40,3 +41,12 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Start small: real bugs only (syntax errors, undefined names, unused
+# imports/variables). Widen later once the codebase is clean under it.
+select = ["E9", "F"]

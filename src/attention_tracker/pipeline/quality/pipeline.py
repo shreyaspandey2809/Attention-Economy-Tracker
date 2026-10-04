@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from attention_tracker.pipeline.quality.dedup import DedupResult, dedupe_events
 from attention_tracker.pipeline.quality.outliers import (

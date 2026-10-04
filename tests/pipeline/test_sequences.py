@@ -10,7 +10,6 @@ from attention_tracker.pipeline.sequences import (
     STEP_FEATURE_NAMES,
     build_day_sequences,
 )
-from attention_tracker.schema.app_metadata import AppCategory
 from attention_tracker.schema.session import Session
 from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
 

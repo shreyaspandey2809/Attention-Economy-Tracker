@@ -74,7 +74,7 @@ original design.
 ```
 
 Everything above the `mock_backend` box is real project logic, fully
-tested (318 tests, including M5's `models/`). `mock_backend` and the
+tested (322 tests, including M5's `models/`). `mock_backend` and the
 Android app are demo/integration layers — they call the real pipeline
 but are not themselves M8 or M9's actual scope (see "What's a
 stand-in" below).
@@ -334,7 +334,15 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   duration/timing patterns rather than restating the addiction
   model's own signal under a different name) — and returns a
   `TrainResult` with a `DistillationReport` (see `evaluation/
-  validation.py`) for both the train and test split.
+  validation.py`) for the train, validation and test splits.
+  `group_train_val_test_split()` splits by user into three disjoint
+  sets. Early stopping (50 rounds, minimum improvement 1e-3) watches
+  the validation split only; the test split is report-only, so the
+  stopping point is never chosen on rows later reported as held out.
+  `TrainResult.best_iteration` records where training stopped
+  (~230 rounds on the default dataset). The per-user RNG in
+  `synthetic_dataset.py` seeds from `zlib.crc32`, not `hash()`, so the
+  dataset is identical across processes.
   `TrainedModel.predict()` always accepts FULL-WIDTH rows (all 18
   columns) regardless of the model's `kind`, re-indexing down to its
   own training columns internally, so callers never track which
@@ -405,6 +413,14 @@ card) and the day's completeness assessment, with a visually separate
 "Model-based scoring — still in progress" panel for M5–M7 output that
 doesn't exist yet. Does not read real on-device usage data — see
 "What's a stand-in" below.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push: a fresh Python 3.11 and
+3.13 environment, `pip install -e ".[test]"` (from `pyproject.toml`
+only, so a dependency missing there fails CI), `ruff check`, `pytest`.
+Ruff is configured for syntax errors and unused code only
+(`[tool.ruff]` in `pyproject.toml`); widen it later.
 
 ### Reserved, not yet implemented
 

@@ -1,4 +1,7 @@
 import math
+import os
+import subprocess
+import sys
 
 from attention_tracker.models.dataset import COLUMN_NAMES
 from attention_tracker.models.synthetic_dataset import (
@@ -62,3 +65,29 @@ def test_seed_offset_produces_disjoint_users():
     ds_a = build_synthetic_distillation_dataset(config, seed_offset=0)
     ds_b = build_synthetic_distillation_dataset(config, seed_offset=1000)
     assert set(ds_a.groups).isdisjoint(set(ds_b.groups))
+
+
+_FINGERPRINT_SCRIPT = """
+import hashlib
+from attention_tracker.models.synthetic_dataset import (
+    SyntheticDatasetConfig,
+    build_synthetic_distillation_dataset,
+)
+ds = build_synthetic_distillation_dataset(SyntheticDatasetConfig(seeds_per_archetype=2, num_days=7))
+print(len(ds), hashlib.sha256(repr(ds.targets).encode()).hexdigest())
+"""
+
+
+def _fingerprint_with_hash_seed(hash_seed: str) -> str:
+    env = {**os.environ, "PYTHONHASHSEED": hash_seed}
+    out = subprocess.run(
+        [sys.executable, "-c", _FINGERPRINT_SCRIPT],
+        capture_output=True, text=True, env=env, check=True,
+    )
+    return out.stdout.strip()
+
+
+def test_dataset_identical_across_processes_with_different_hash_seeds():
+    """Regression: the per-user RNG used hash(archetype.name), which Python
+    randomizes per process, so row counts differed run to run."""
+    assert _fingerprint_with_hash_seed("1") == _fingerprint_with_hash_seed("2")

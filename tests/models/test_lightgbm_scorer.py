@@ -6,6 +6,7 @@ from attention_tracker.models.dataset import COLUMN_NAMES, Dataset
 from attention_tracker.models.lightgbm_scorer import (
     DEFAULT_LGB_PARAMS,
     group_train_test_split,
+    group_train_val_test_split,
     retarget_dataset,
     train_model,
 )
@@ -98,3 +99,33 @@ def test_retarget_dataset_raises_when_no_match(dataset):
 
 def test_default_params_is_regression_objective():
     assert DEFAULT_LGB_PARAMS["objective"] == "regression"
+
+
+def test_three_way_split_is_user_disjoint_and_complete(dataset):
+    train_idx, val_idx, test_idx = group_train_val_test_split(dataset, seed=0)
+    groups = [{dataset.groups[i] for i in idx} for idx in (train_idx, val_idx, test_idx)]
+    assert groups[0].isdisjoint(groups[1])
+    assert groups[0].isdisjoint(groups[2])
+    assert groups[1].isdisjoint(groups[2])
+    assert train_idx and val_idx and test_idx
+    assert len(train_idx) + len(val_idx) + len(test_idx) == len(dataset)
+
+
+def test_three_way_split_raises_when_train_side_would_be_empty():
+    ds = Dataset(
+        rows=[[0.0] * len(COLUMN_NAMES)] * 2,
+        targets=[1.0, 2.0],
+        groups=["a", "b"],
+    )
+    with pytest.raises(ValueError):
+        group_train_val_test_split(ds)
+
+
+def test_train_model_reports_validation_split_and_best_iteration(dataset):
+    result = train_model(dataset, kind="addiction", seed=0)
+    assert result.val_distillation.n_windows > 0
+    assert result.best_iteration >= 1
+    # Early stopping, not the round cap, must end training.
+    from attention_tracker.models.lightgbm_scorer import MAX_BOOST_ROUNDS
+
+    assert result.best_iteration < MAX_BOOST_ROUNDS

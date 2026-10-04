@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from attention_tracker.schema.app_metadata import AppCategory
 
