@@ -16,7 +16,7 @@ map and data-flow diagram. Build runs in four phases:
 - **Phase 4 — Android + frontend:** on-device collector, React
   dashboard (M9-M10)
 
-## Status: Phase 1 — Data Foundation (M4 complete)
+## Status: Phase 2 — ML Core (M5 complete)
 
 - [x] M1: Schema Layer — `RawEvent`, `Session`, `AppMetadataEntry`,
       `TaxonomyLoader` + 50-app seed taxonomy
@@ -110,7 +110,7 @@ map and data-flow diagram. Build runs in four phases:
       training data), and `mock_backend`'s API response all build on
       from here on, rather than each caller re-assembling individual
       feature calls separately.
-- [x] Unit tests: 318 passing total
+- [x] Unit tests: 283 passing total
 - [x] **External review response** — an outside review of the
       project's scientific validity identified 37 numbered
       weaknesses. Addressed the fixable ones directly:
@@ -156,9 +156,10 @@ map and data-flow diagram. Build runs in four phases:
       `POST /simulate-day`, including `rejected_pairs_count` and
       `overlapping_sessions_count` diagnostics. Covered by
       `tests/mock_backend/`. Nothing in its response is fabricated —
-      it's the real M1-M4 pipeline with no persistence layer yet.
-      LightGBM/LSTM/autoencoder/SHAP fields will be added here as
-      M5-M7 are built.
+      it's the real M1-M4 pipeline with no persistence layer yet. M5's
+      LightGBM models exist in `models/` but aren't wired into this
+      response yet; LSTM/autoencoder/SHAP fields follow as M6-M7 are
+      built.
 - [x] `attention-collector-android/` — a Kotlin + Jetpack Compose
       Android app (archetype picker → "Simulate a day" → dashboard)
       that calls `mock_backend`'s `/simulate-day` and displays the
@@ -167,7 +168,8 @@ map and data-flow diagram. Build runs in four phases:
       completeness assessment. Does **not** yet read real device usage
       data (that's M9's scope) — it's a client demonstrating the
       pipeline, with a visibly separate "Model-based scoring — still
-      in progress" panel for M5-M7's not-yet-built output.
+      in progress" panel for M5's LightGBM output (built, not yet
+      wired into this app) and M6-M7's not-yet-built output.
   - **Standing rule going forward:** every milestone from M4 onward
     ships with a corresponding update to `mock_backend`'s response
     schema and the Android dashboard, so the app always reflects the
@@ -246,6 +248,58 @@ map and data-flow diagram. Build runs in four phases:
       agreement with the heuristic is expected and proves nothing about
       real problematic use. How to collect the labels:
       [`docs/validation_protocol.md`](docs/validation_protocol.md).
+- [x] M5: `models/` — LightGBM distillation of the M4 heuristic into
+      "addiction" and "distraction" regressors:
+  - `dataset.py` — `feature_row()` encodes a `FeatureVector` + its
+    app's `AppCategory` into an 18-column numeric row (12 engineered
+    features + 6 one-hot category columns); a one-session window's
+    undefined features (`interarrival_mean_sec`,
+    `interarrival_under_2min_ratio`) are encoded as NaN, never 0, so
+    the model can split on "undefined" instead of "zero." `Dataset`
+    holds `rows`/`targets`/`groups` (one synthetic user id per row).
+  - `synthetic_dataset.py` — `build_synthetic_distillation_dataset()`
+    runs the real generator → data-quality pipeline → weekly windowing
+    → feature extraction → heuristic scoring for every (archetype,
+    seed) pair, treating each as one synthetic "user" so a group-aware
+    split can hold out entire people, not just rows.
+  - `lightgbm_scorer.py` — `group_train_test_split()` splits by unique
+    user id rather than by row, since two weekly windows of the same
+    synthetic user are highly correlated and a row-level split would
+    mostly test memorization. `train_model()` trains either model
+    `kind` ("addiction": all 18 columns; "distraction": excludes the
+    two compulsive-re-opening-frequency columns) and returns a
+    `DistillationReport` per side. `retarget_dataset()` swaps the
+    training target to a per-user label dict (e.g. a real SAS-SV
+    mean) for the day a pilot exists, dropping unlabeled users rather
+    than guessing.
+  - `model_evaluation.py` — three checks that stay meaningful even
+    though the training target is circular: `archetype_ranking_check()`
+    generates FRESH synthetic users on a held-out seed range and
+    checks whether the model's mean predicted score per archetype
+    preserves `COMPULSIVE_CHECKER > DOOMSCROLLER > DEEP_WORKER`, the
+    ordering the archetypes were designed to exhibit;
+    `correlation_against_heuristic()` computes the Spearman rank
+    correlation between model and heuristic on the same windows;
+    `stability_under_perturbation()` retrains on Gaussian-noised
+    copies of the inputs (noise scaled by each column's own stdev,
+    NaNs left untouched) and re-checks the ordering, to see whether it
+    is a robust archetype-separation property or a fragile accident of
+    one random seed. On the default synthetic configuration: the test
+    split reaches R² ≈ 0.98-0.99 against the heuristic (expected — see
+    the model's own caveat below), Spearman rho ≈ 0.995 between model
+    and heuristic, archetype ordering holds on fresh held-out users,
+    and that ordering survived every noise level tried (0.05x-100x
+    each column's stdev) — evidence the five archetypes are
+    statistically well-separated on these features, not evidence that
+    an arbitrary LightGBM model is robust in general.
+  - Every `DistillationReport` carries a non-waivable caveat: it
+    measures how well the model reproduces the M4 heuristic on
+    held-out synthetic users, which is expected since the heuristic is
+    a deterministic function of the model's own inputs — not accuracy
+    against real problematic use, which no label for yet exists.
+  - Not yet wired into `mock_backend`'s API response or the Android
+    dashboard — that's a standing follow-up, not part of M5 itself.
+- [x] Unit tests: 318 passing total (283 M1-M4/Phase 1-2, 35 M5)
 
 ## Setup
 

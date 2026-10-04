@@ -11,7 +11,7 @@ Every arrow below was confirmed by reading the actual `import`
 statements in the source files, not written from memory of the
 original design.
 
-## Data flow, end to end (current state: M1–M4 complete)
+## Data flow, end to end (current state: M1–M5 complete)
 
 ```
                      ┌─────────────────────────┐
@@ -74,9 +74,10 @@ original design.
 ```
 
 Everything above the `mock_backend` box is real project logic, fully
-tested (318 tests). `mock_backend` and the Android
-app are demo/integration layers — they call the real pipeline but are
-not themselves M8 or M9's actual scope (see "What's a stand-in" below).
+tested (318 tests, including M5's `models/`). `mock_backend` and the
+Android app are demo/integration layers — they call the real pipeline
+but are not themselves M8 or M9's actual scope (see "What's a
+stand-in" below).
 
 ## Module reference
 
@@ -240,7 +241,7 @@ themselves — grouping is the caller's job.
   re-assembled per caller. Depends on all four feature modules above,
   plus `schema/session.py`, `schema/taxonomy_loader.py`.
 
-### `scoring/` — M4 heuristic baseline (M5's `models/` still reserved)
+### `scoring/` — M4 heuristic baseline (M5's training target)
 
 - **`config.py`** — `HeuristicWeights` (validates weights sum to 1.0)
   and `NormalizationBounds`. Every weight and bound is documented with
@@ -295,6 +296,88 @@ Depends on nothing else in the package; pure Python.
   R² ≈ 0.94 on held-out synthetic users.
 - Protocol for collecting the labels: `docs/validation_protocol.md`.
 
+### `models/` — M5 LightGBM distillation (M6's LSTM/autoencoder still reserved)
+
+Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
+`scoring/heuristic.py`, `synthetic/`, `evaluation/validation.py`.
+
+- **`dataset.py`** — `COLUMN_NAMES` (18 columns: 12 engineered
+  features + 6 one-hot `AppCategory` columns). `feature_row(fv,
+  category)` encodes one `FeatureVector` + category into a row
+  matching `COLUMN_NAMES`; a feature that's undefined for a
+  one-session window (`interarrival_mean_sec`,
+  `interarrival_under_2min_ratio`) becomes `float('nan')`, never `0`,
+  so a tree model can split on "was this defined" rather than being
+  told an undefined value behaves like zero. `Dataset` holds
+  `rows`/`targets`/`groups` (one synthetic user id per row), with
+  `__post_init__` validation that all three line up and every row
+  matches `COLUMN_NAMES`'s width.
+- **`synthetic_dataset.py`** — `SyntheticDatasetConfig`
+  (seeds-per-archetype, days, start date, taxonomy) and
+  `build_synthetic_distillation_dataset()`: generates one synthetic
+  "user" per (archetype, seed), runs each through the real
+  `run_data_quality_pipeline()` → `group_sessions_by_user_app_week()`
+  → `build_feature_vector()` → `compute_heuristic_score()`, and
+  returns every resulting window as one `Dataset` row, labeled by the
+  heuristic — the only training target available before a real SAS-SV
+  pilot exists. A `seed_offset` parameter draws a disjoint seed range
+  from the same archetypes, so a held-out check can generate users the
+  training set never saw.
+- **`lightgbm_scorer.py`** — `group_train_test_split()` splits by
+  unique user id, not by row: two weekly windows from the same
+  synthetic user are highly correlated, so a row-level split would
+  mostly test memorization of users the model already trained on.
+  `train_model()` trains one of two `ModelKind`s — `"addiction"` (all
+  18 columns) or `"distraction"` (excludes `session_count` and
+  `sessions_under_30s_ratio`, the two columns most directly tied to
+  compulsive re-opening frequency, so the distraction model reflects
+  duration/timing patterns rather than restating the addiction
+  model's own signal under a different name) — and returns a
+  `TrainResult` with a `DistillationReport` (see `evaluation/
+  validation.py`) for both the train and test split.
+  `TrainedModel.predict()` always accepts FULL-WIDTH rows (all 18
+  columns) regardless of the model's `kind`, re-indexing down to its
+  own training columns internally, so callers never track which
+  columns a given kind excludes; it returns `[]` immediately for empty
+  input rather than constructing a malformed array. `retarget_dataset()`
+  swaps the training target to a per-user label dict (e.g. a real
+  SAS-SV mean once a pilot exists), dropping any row whose user has no
+  label rather than guessing one.
+- **`model_evaluation.py`** — three checks that stay meaningful even
+  though the training target is circular (see "Known limitations"
+  below): `archetype_ranking_check()` generates FRESH synthetic users
+  on a held-out seed range, predicts every window, and checks whether
+  the model's mean score per archetype preserves
+  `EXPECTED_RISK_ORDER` (`COMPULSIVE_CHECKER > DOOMSCROLLER >
+  DEEP_WORKER` — the ordering those archetypes were built to exhibit;
+  `BALANCED`/`BINGE_WEEKEND` are deliberately excluded since they were
+  designed to sit between the extremes, not anchor either end).
+  `correlation_against_heuristic()` computes the Spearman rank
+  correlation between model predictions and heuristic scores on the
+  same rows — a non-parametric view of agreement that doesn't assume
+  the linear relationship R² does. `stability_under_perturbation()`
+  retrains a caller-supplied model `n_perturbations` times on
+  Gaussian-noised copies of the rows (noise scaled by each column's
+  own population stdev, computed ignoring NaNs; NaN values are left
+  untouched rather than noised) and re-runs the archetype-ranking
+  check each time. On the default synthetic configuration: the test
+  split reaches R² ≈ 0.98-0.99 against the heuristic (expected, not
+  evidence of real-world accuracy — see the caveat below), Spearman
+  rho ≈ 0.995 between model and heuristic, archetype ordering holds on
+  fresh held-out users, and that ordering survived every noise level
+  tried (0.05x-100x each column's own stdev) — evidence the five
+  archetypes are statistically well-separated on these features, not
+  evidence that an arbitrary LightGBM model is robust in general.
+- Every `DistillationReport` produced here carries
+  `evaluation.validation.DISTILLATION_CAVEAT`: a high number measures
+  how well the model reproduces the M4 heuristic on held-out synthetic
+  users (expected, since the heuristic is a deterministic function of
+  the model's own inputs), not accuracy against real problematic use,
+  for which no label yet exists.
+- **Not yet wired into `mock_backend`'s API response or the Android
+  dashboard.** That wiring, plus M6 (LSTM, autoencoder) and M7 (SHAP),
+  remain open follow-ups.
+
 ### `mock_backend/` — demo integration layer (not the real M8 backend)
 
 - **`main.py`** — FastAPI service. `GET /archetypes` lists the real
@@ -329,7 +412,9 @@ These packages exist as empty scaffolding (`__init__.py` only) for
 future milestones. Listed here so their emptiness reads as
 intentional, not abandoned:
 
-- **`models/`** — M5 (LightGBM), M6 (LSTM, autoencoder)
+- **`models/` (M6 only)** — M5's LightGBM distillation is built; see
+  the `models/` module reference above. M6 (LSTM, autoencoder) is
+  still reserved inside the same package.
 - **`explainability/`** — M7 (SHAP)
 - **`storage/`** — M8 (SQLite persistence)
 - **`api/`** — M8 (the real FastAPI service, replacing `mock_backend`)
@@ -350,13 +435,16 @@ What's *not* real yet:
   runs on. Real collection is M9's scope.
 - **Persistence.** `mock_backend` holds nothing between requests — no
   database, no history. That's M8's `storage/` scope.
-- **Model-based scoring.** LightGBM/LSTM/autoencoder output and SHAP
-  explanations don't exist yet (M5–M7). The M4 heuristic score IS
-  real (see `scoring/heuristic.py`) — it's a real, tested, weighted
-  combination of real features, not a fabricated number — but it's a
-  hand-designed heuristic, not a learned model. The Android app's
-  "Model-based scoring" panel is deliberately left visibly incomplete
-  for the M5-M7 pieces rather than showing placeholder numbers.
+- **Model-based scoring.** M5's LightGBM "addiction"/"distraction"
+  models are real and tested (see `models/` above) but not yet wired
+  into `mock_backend`'s response or the Android dashboard; LSTM,
+  autoencoder, and SHAP explanations don't exist yet (M6-M7). The M4
+  heuristic score IS real (see `scoring/heuristic.py`) — it's a real,
+  tested, weighted combination of real features, not a fabricated
+  number — but it's a hand-designed heuristic, not a learned model.
+  The Android app's "Model-based scoring" panel is deliberately left
+  visibly incomplete for the not-yet-wired M5 output and the
+  not-yet-built M6-M7 pieces rather than showing placeholder numbers.
 - **Completeness.** `assess_day_completeness()` is a real, tested gap
   heuristic, but it genuinely cannot distinguish a sync failure from
   the user simply not using their phone — that requires M9's Android
@@ -390,11 +478,15 @@ unaddressed, is the correct response to this category:
   checked against those same constructed behaviors. This validates
   internal consistency (does the code do what it was designed to do)
   but not correspondence to real human behavior.
-- **M5's LightGBM models will learn the heuristic, not reality.**
-  Since M4's score is the only available training target, a high
-  model accuracy will demonstrate that LightGBM can approximate the
-  hand-designed formula — not that either the heuristic or the model
-  detects real addictive behavior.
+- **M5's LightGBM models learn the heuristic, not reality.** Since
+  M4's score is the only available training target, the measured
+  R² ≈ 0.98-0.99 test-split fit and rho ≈ 0.995 rank correlation
+  demonstrate that LightGBM closely approximates the hand-designed
+  formula — not that either the heuristic or the model detects real
+  addictive behavior. `model_evaluation.py`'s checks (archetype
+  ranking on held-out users, correlation, perturbation stability) ask
+  narrower questions that stay meaningful despite this circularity,
+  but none of them substitute for a real ground-truth label.
 - **No independent validation dataset.** There is no held-out,
   real-user, independently-labeled dataset to measure generalization
   against.
