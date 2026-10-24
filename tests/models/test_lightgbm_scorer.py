@@ -129,3 +129,32 @@ def test_train_model_reports_validation_split_and_best_iteration(dataset):
     from attention_tracker.models.lightgbm_scorer import MAX_BOOST_ROUNDS
 
     assert result.best_iteration < MAX_BOOST_ROUNDS
+
+
+def test_distraction_model_trains_on_the_distraction_target(dataset):
+    assert dataset.distraction_targets is not None
+    assert dataset.distraction_targets != dataset.targets
+    result = train_model(dataset, kind="distraction", seed=0)
+    # Fits the distraction heuristic well...
+    assert result.test_distillation.r_squared > 0.5
+    # ...and the two models disagree on at least some rows, because the
+    # targets differ.
+    addiction = train_model(dataset, kind="addiction", seed=0)
+    a = addiction.model.predict(dataset.rows[:200])
+    d = result.model.predict(dataset.rows[:200])
+    assert any(abs(x - y) > 0.01 for x, y in zip(a, d))
+
+
+def test_both_models_use_every_column(dataset):
+    for kind in ("addiction", "distraction"):
+        assert train_model(dataset, kind=kind, seed=0).model.columns == list(COLUMN_NAMES)
+
+
+def test_distraction_model_requires_distraction_targets():
+    ds = Dataset(
+        rows=[[0.0] * len(COLUMN_NAMES)] * 10,
+        targets=[1.0] * 10,
+        groups=[f"u{i}" for i in range(10)],
+    )
+    with pytest.raises(ValueError, match="distraction_targets"):
+        train_model(ds, kind="distraction")

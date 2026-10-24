@@ -35,7 +35,13 @@ data class AppFeatureSummary(
     @Json(name = "productive_interruption_rate") val productiveInterruptionRate: Double,
 
     // Heuristic score (M4 — added when M4 was completed)
-    @Json(name = "heuristic_score") val heuristicScore: Double
+    @Json(name = "heuristic_score") val heuristicScore: Double,
+
+    // Distraction heuristic + LightGBM model scores (M5 — added in Phase 1).
+    // Model scores are null when the backend has no trained model.
+    @Json(name = "distraction_score") val distractionScore: Double = 0.0,
+    @Json(name = "addiction_model_score") val addictionModelScore: Double? = null,
+    @Json(name = "distraction_model_score") val distractionModelScore: Double? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -58,5 +64,6 @@ data class SimulateDayResponse(
     val completeness: CompletenessSummary,
     @Json(name = "per_app_features") val perAppFeatures: List<AppFeatureSummary>,
     @Json(name = "scoring_status") val scoringStatus: String,
-    @Json(name = "scoring_message") val scoringMessage: String
+    @Json(name = "scoring_message") val scoringMessage: String,
+    @Json(name = "model_versions") val modelVersions: Map<String, String> = emptyMap()
 )

@@ -106,7 +106,10 @@ fun CollectorScreen(viewModel: SimulationViewModel = viewModel()) {
                 Spacer(Modifier.height(20.dp))
                 ResultsList(s.response.perAppFeatures)
                 Spacer(Modifier.height(24.dp))
-                InProgressScoringPanel(s.response.scoringMessage)
+                InProgressScoringPanel(
+                    scoringMessage = s.response.scoringMessage,
+                    m5Live = s.response.scoringStatus == "models_loaded"
+                )
             }
 
             is UiState.Error -> {
@@ -320,18 +323,36 @@ private fun AppCard(app: AppFeatureSummary) {
                 Text(shortAppName(app.packageName), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 Text(formatSeconds(app.totalTimeSec), color = TextDim, fontSize = 12.sp)
             }
-            HeuristicScoreBadge(app.heuristicScore)
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                ScoreBadge(app.heuristicScore, "addiction")
+                ScoreBadge(app.distractionScore, "distraction")
+            }
         }
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = BorderSoft)
         Spacer(Modifier.height(8.dp))
+        ModelScoreLines(app)
         FlowMetrics(app)
     }
 }
 
 @Composable
-private fun HeuristicScoreBadge(score: Double) {
-    // Score is 0-10 by construction (scoring/heuristic.py) — color
+private fun ModelScoreLines(app: AppFeatureSummary) {
+    // LightGBM output (M5). Only shown when the backend has trained models;
+    // never a placeholder number.
+    val addiction = app.addictionModelScore
+    val distraction = app.distractionModelScore
+    if (addiction == null || distraction == null) return
+    Column {
+        MetricLine("LightGBM addiction (synthetic-trained)", String.format("%.1f / 10", addiction))
+        MetricLine("LightGBM distraction (synthetic-trained)", String.format("%.1f / 10", distraction))
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable
+private fun ScoreBadge(score: Double, label: String) {
+    // Score is 0-10 by construction (scoring/heuristic.py, scoring/distraction.py) — color
     // shifts from sage (low) through amber (mid) to a warmer tone
     // (high) so the number reads at a glance, not just numerically.
     val color = when {
@@ -346,7 +367,7 @@ private fun HeuristicScoreBadge(score: Double) {
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold
         )
-        Text("/ 10 heuristic", color = TextFaint, fontSize = 10.sp)
+        Text("/ 10 $label", color = TextFaint, fontSize = 10.sp)
     }
 }
 
@@ -391,9 +412,9 @@ private fun EmptyResultsState(message: String = "Pick an archetype and tap \"Sim
 }
 
 @Composable
-private fun InProgressScoringPanel(scoringMessage: String) {
+private fun InProgressScoringPanel(scoringMessage: String, m5Live: Boolean) {
     val rows = listOf(
-        "LightGBM addiction / distraction" to "M5",
+        "LightGBM addiction / distraction" to (if (m5Live) "LIVE" else "M5"),
         "LSTM sequence score" to "M6",
         "Autoencoder anomaly signal" to "M6",
         "SHAP explanation" to "M7"

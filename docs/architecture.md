@@ -74,10 +74,10 @@ original design.
 ```
 
 Everything above the `mock_backend` box is real project logic, fully
-tested (322 tests, including M5's `models/`). `mock_backend` and the
+tested (346 tests, including M5's `models/`). `mock_backend` and the
 Android app are demo/integration layers — they call the real pipeline
-but are not themselves M8 or M9's actual scope (see "What's a
-stand-in" below).
+but are not themselves M8 or M9's actual scope (see "Demo layer and
+production scope" below).
 
 ## Module reference
 
@@ -164,7 +164,7 @@ Depends on `schema/` only.
   largest session-free gap (across ALL the user's apps, not one)
   exceeds a threshold (default 6 hours). Cannot distinguish a real
   sync failure from genuine non-use — that distinction needs M9's
-  Android sync heartbeat, which doesn't exist yet. Takes the full
+  Android sync heartbeat, which M9 adds. Takes the full
   `list[Session]` for one user-day (not a
   `group_sessions_by_user_app_day()` output, which is scoped to one
   app). Depends on `schema/session.py` only. `result.day` is the
@@ -222,8 +222,8 @@ themselves — grouping is the caller's job.
 - **`temporal.py`** — `late_night_usage_pct` (session-COUNT-based,
   23:00–04:00, matching the generator's own late-night window
   definition exactly), `late_night_usage_time_ratio` (the
-  duration-weighted counterpart, added as a fix for a weakness noted
-  in external review — see "Known limitations" below — both are kept
+  duration-weighted counterpart: a 5-second late-night check and a
+  90-minute late-night session count differently — both are kept
   since they answer different questions), `hourly_usage_entropy`
   (Shannon entropy over hour-of-day, normalized to [0,1]),
   `weekend_usage_ratio` (duration-weighted, not count-weighted).
@@ -241,7 +241,7 @@ themselves — grouping is the caller's job.
   re-assembled per caller. Depends on all four feature modules above,
   plus `schema/session.py`, `schema/taxonomy_loader.py`.
 
-### `scoring/` — M4 heuristic baseline (M5's training target)
+### `scoring/` — M4 heuristic baseline and distraction heuristic (M5's training targets)
 
 - **`config.py`** — `HeuristicWeights` (validates weights sum to 1.0)
   and `NormalizationBounds`. Every weight and bound is documented with
@@ -267,6 +267,20 @@ themselves — grouping is the caller's job.
   ground-truth addiction label exists. Depends on
   `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   `scoring/config.py`.
+- **`distraction.py`** — `compute_distraction_score()`, the distraction
+  heuristic (0-10) and the M5 distraction model's training target. It
+  measures how fragmented attention is, not how compulsive: weights are
+  short sessions .25, productive-app interruptions .25, rapid
+  re-opening .20, session count .15, hourly entropy .10 (high entropy,
+  usage scattered across the day, scores higher; the addiction
+  heuristic reads it the other way) and total time .05. Late-night and
+  weekend usage carry no weight. Category multipliers differ too
+  (ADDICTIVE and COMMUNICATION 1.0, ENTERTAINMENT 0.85, UNKNOWN 0.7,
+  UTILITY 0.4, PRODUCTIVE 0.2). On the default synthetic dataset its
+  Spearman rank correlation with the addiction heuristic is about 0.70,
+  so the two models learn different targets. Like the addiction
+  heuristic it is expert-weighted and unvalidated against real users.
+  `DistractionWeights` in `config.py` validates the weights sum to 1.0.
   **Validation:** archetype-ordering only (no ground truth exists) —
   see `tests/scoring/test_heuristic.py`, run across all five
   archetypes and 30 seeds each at a 27/30 pass-rate bar, matching the
@@ -299,7 +313,8 @@ Depends on nothing else in the package; pure Python.
 ### `models/` — M5 LightGBM distillation (M6's LSTM/autoencoder still reserved)
 
 Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
-`scoring/heuristic.py`, `synthetic/`, `evaluation/validation.py`.
+`scoring/heuristic.py`, `scoring/distraction.py`, `synthetic/`,
+`evaluation/validation.py`.
 
 - **`dataset.py`** — `COLUMN_NAMES` (18 columns: 12 engineered
   features + 6 one-hot `AppCategory` columns). `feature_row(fv,
@@ -309,7 +324,9 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   `interarrival_under_2min_ratio`) becomes `float('nan')`, never `0`,
   so a tree model can split on "was this defined" rather than being
   told an undefined value behaves like zero. `Dataset` holds
-  `rows`/`targets`/`groups` (one synthetic user id per row), with
+  `rows`/`targets`/`groups` (one synthetic user id per row) plus an
+  optional `distraction_targets` (the distraction-heuristic label for
+  each row; `targets` stays the addiction label), with
   `__post_init__` validation that all three line up and every row
   matches `COLUMN_NAMES`'s width.
 - **`synthetic_dataset.py`** — `SyntheticDatasetConfig`
@@ -327,12 +344,11 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   unique user id, not by row: two weekly windows from the same
   synthetic user are highly correlated, so a row-level split would
   mostly test memorization of users the model already trained on.
-  `train_model()` trains one of two `ModelKind`s — `"addiction"` (all
-  18 columns) or `"distraction"` (excludes `session_count` and
-  `sessions_under_30s_ratio`, the two columns most directly tied to
-  compulsive re-opening frequency, so the distraction model reflects
-  duration/timing patterns rather than restating the addiction
-  model's own signal under a different name) — and returns a
+  `train_model()` trains one of two `ModelKind`s — `"addiction"`
+  (trained on the addiction heuristic) or `"distraction"` (trained on
+  the separate distraction heuristic). Both read all 18 columns; they
+  differ by target, not by hidden features. Asking for a distraction
+  model on a dataset without `distraction_targets` raises. Returns a
   `TrainResult` with a `DistillationReport` (see `evaluation/
   validation.py`) for the train, validation and test splits.
   `group_train_val_test_split()` splits by user into three disjoint
@@ -345,14 +361,13 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   dataset is identical across processes.
   `TrainedModel.predict()` always accepts FULL-WIDTH rows (all 18
   columns) regardless of the model's `kind`, re-indexing down to its
-  own training columns internally, so callers never track which
-  columns a given kind excludes; it returns `[]` immediately for empty
+  own training columns internally; it returns `[]` immediately for empty
   input rather than constructing a malformed array. `retarget_dataset()`
   swaps the training target to a per-user label dict (e.g. a real
   SAS-SV mean once a pilot exists), dropping any row whose user has no
   label rather than guessing one.
 - **`model_evaluation.py`** — three checks that stay meaningful even
-  though the training target is circular (see "Known limitations"
+  though the training target is circular (see "Scope and validation roadmap"
   below): `archetype_ranking_check()` generates FRESH synthetic users
   on a held-out seed range, predicts every window, and checks whether
   the model's mean score per archetype preserves
@@ -382,9 +397,21 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   users (expected, since the heuristic is a deterministic function of
   the model's own inputs), not accuracy against real problematic use,
   for which no label yet exists.
-- **Not yet wired into `mock_backend`'s API response or the Android
-  dashboard.** That wiring, plus M6 (LSTM, autoencoder) and M7 (SHAP),
-  remain open follow-ups.
+- **`registry.py`** — saves and loads trained models. Layout:
+  `<root>/<kind>/<version>/model.txt` (LightGBM text model) plus
+  `meta.json` (kind, version, UTC timestamp, feature columns, LightGBM
+  version, best iteration, validation and test R², the distillation
+  caveat, and `target: heuristic_distillation_synthetic`). Versions are
+  UTC timestamps, so the lexicographically largest directory is the
+  newest. `load_model()` refuses a model whose columns the code no
+  longer has (retrain instead of mispredicting). The root defaults to
+  `models_artifacts/` (git-ignored) or the `ATTENTION_MODEL_DIR`
+  environment variable.
+- **`train_cli.py`** — `python -m attention_tracker.models.train_cli`
+  builds the synthetic dataset, trains both models and saves them to
+  the registry.
+- **Wired into `mock_backend` and the Android dashboard** (see below).
+  M6 (LSTM, autoencoder) and M7 (SHAP) remain open.
 
 ### `mock_backend/` — demo integration layer (not the real M8 backend)
 
@@ -398,7 +425,14 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
   `synthetic/archetypes.py`, `pipeline/quality/pipeline.py`,
   `pipeline/quality/completeness.py`, `pipeline/windowing.py`,
   `pipeline/features/feature_vector.py`, `scoring/heuristic.py`,
-  `schema/taxonomy_loader.py`. Response includes
+  `scoring/distraction.py`, `models/registry.py`, `models/dataset.py`,
+  `schema/taxonomy_loader.py`. Each app in the response carries the
+  addiction heuristic, the distraction heuristic and, when trained
+  models exist in the registry, `addiction_model_score` and
+  `distraction_model_score` (otherwise `null`; `scoring_status` is then
+  `heuristic_only`). `model_versions` names the model versions used.
+  Models are loaded lazily, so one trained while the server runs is
+  picked up on the next request. Response includes
   `rejected_pairs_count` and `overlapping_sessions_count`. Requires
   `fastapi`, `uvicorn`, `httpx` (in `requirements.txt`). Covered by
   `tests/mock_backend/`.
@@ -407,14 +441,16 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
 
 Kotlin + Jetpack Compose app. Archetype picker → "Simulate a day" →
 calls `mock_backend`'s `POST /simulate-day` via Retrofit/Moshi →
-displays the returned `FeatureVector` fields plus each app's
-`heuristic_score` (M4, shown as a colored 0-10 badge on each app
-card) and the day's completeness assessment, with a visually separate
-"Model-based scoring — still in progress" panel for M5–M7 output that
-doesn't exist yet. Does not read real on-device usage data — see
-"What's a stand-in" below.
+displays the returned `FeatureVector` fields plus each app's addiction
+and distraction heuristic scores (colored 0-10 badges on each app
+card), the LightGBM model scores when the backend has trained models
+(shown only then, never as placeholders), and the day's completeness
+assessment, with a visually separate "Model-based scoring — still in
+progress" panel in which the LightGBM row reads LIVE once models are
+loaded and the M6–M7 rows stay pending. Does not read real on-device usage data — see
+"Demo layer and production scope" below.
 
-### Reserved, not yet implemented
+### Reserved for upcoming milestones
 
 These packages exist as empty scaffolding (`__init__.py` only) for
 future milestones. Listed here so their emptiness reads as
@@ -429,98 +465,52 @@ intentional, not abandoned:
 - **`utils/`** — cross-cutting helpers, populated as needed rather
   than on a fixed milestone
 
-## What's a stand-in, and what's real
+## Demo layer and production scope
 
-It's easy to misread `mock_backend/` and the Android app as "fake" —
-they're not. Every computation between `SyntheticEventGenerator` and
-the JSON response is the real, tested pipeline code from `src/`.
-What's *not* real yet:
+`mock_backend/` and the Android app run the real pipeline end to end:
+every computation between `SyntheticEventGenerator` and the JSON
+response is the tested code from `src/`. What each layer covers today,
+and which milestone extends it:
 
-- **The data source.** `mock_backend` calls `SyntheticEventGenerator`,
-  not a real device. The Android app's "Simulate a day" button
-  fabricates a day's usage from an archetype's statistics — it does
-  not read `UsageStatsManager` or anything else from the phone it
-  runs on. Real collection is M9's scope.
-- **Persistence.** `mock_backend` holds nothing between requests — no
-  database, no history. That's M8's `storage/` scope.
-- **Model-based scoring.** M5's LightGBM "addiction"/"distraction"
-  models are real and tested (see `models/` above) but not yet wired
-  into `mock_backend`'s response or the Android dashboard; LSTM,
-  autoencoder, and SHAP explanations don't exist yet (M6-M7). The M4
-  heuristic score IS real (see `scoring/heuristic.py`) — it's a real,
-  tested, weighted combination of real features, not a fabricated
-  number — but it's a hand-designed heuristic, not a learned model.
-  The Android app's "Model-based scoring" panel is deliberately left
-  visibly incomplete for the not-yet-wired M5 output and the
-  not-yet-built M6-M7 pieces rather than showing placeholder numbers.
-- **Completeness.** `assess_day_completeness()` is a real, tested gap
-  heuristic, but it genuinely cannot distinguish a sync failure from
-  the user simply not using their phone — that requires M9's Android
-  sync heartbeat, which doesn't exist yet. Treat an "incomplete" flag
-  as "worth a closer look," not as a confirmed sync problem.
+- **Data source.** `mock_backend` generates synthetic days from
+  archetype statistics, and the Android app's "Simulate a day" button
+  displays them. Reading `UsageStatsManager` on a real phone is M9.
+- **Persistence.** `mock_backend` answers each request independently.
+  Storage and history are M8's `storage/` scope.
+- **Scoring.** The M4 heuristic is a tested, weighted combination of
+  real features. M5's LightGBM "addiction" and "distraction" models
+  are served by `mock_backend` and shown in the Android dashboard once
+  trained with `python -m attention_tracker.models.train_cli`. They
+  are trained on synthetic users to reproduce the two heuristics.
+  LSTM, autoencoder and SHAP (M6-M7) are next, and the Android
+  "Model-based scoring" panel keeps those rows marked pending rather
+  than showing placeholder numbers.
+- **Completeness.** `assess_day_completeness()` flags gaps in a day's
+  data. Telling a sync gap from a day the user did not use the phone
+  needs M9's Android sync heartbeat, so an "incomplete" flag means
+  "worth a closer look".
 
-## Known limitations
+## Scope and validation roadmap
 
-An external review of this project's methodology raised 37 numbered
-weaknesses, spanning validity, feature design, data, Android, backend,
-and testing concerns. Most were either already-planned future
-milestones (Android/backend items — see "What's a stand-in" above) or
-concrete engineering fixes (addressed directly in `scoring/config.py`,
-`pipeline/features/temporal.py`, and `tests/scoring/`). A subset,
-however, are structural limitations of building on synthetic data
-with no real-user labels — no amount of additional code resolves
-them, only real behavioral data with independently-obtained labels
-can. Documenting them precisely, rather than leaving them
-unaddressed, is the correct response to this category:
+The current build is the full engineering pipeline on synthetic data.
+Its scores have not yet been compared with real users. This section
+states what that means and how the pilot closes it.
 
-- **No ground-truth labels exist.** There is no validated definition
-  of "problematic attention behavior" this project's score is checked
-  against, and no real-human-outcomes dataset to calibrate it with.
-  A score of 7 does not have an established real-world meaning.
-- **The heuristic weights are expert-chosen, not learned.** See
-  `scoring/config.py`'s "WEIGHT PROVENANCE" section for the full
-  statement — this is written directly into the code, not only here.
-- **Circular validation.** The synthetic archetypes (`DOOMSCROLLER`,
-  `COMPULSIVE_CHECKER`, etc.) are constructed to exhibit the exact
-  behaviors the scorer is designed to detect, and the scorer is then
-  checked against those same constructed behaviors. This validates
-  internal consistency (does the code do what it was designed to do)
-  but not correspondence to real human behavior.
-- **M5's LightGBM models learn the heuristic, not reality.** Since
-  M4's score is the only available training target, the measured
-  R² ≈ 0.98-0.99 test-split fit and rho ≈ 0.995 rank correlation
-  demonstrate that LightGBM closely approximates the hand-designed
-  formula — not that either the heuristic or the model detects real
-  addictive behavior. `model_evaluation.py`'s checks (archetype
-  ranking on held-out users, correlation, perturbation stability) ask
-  narrower questions that stay meaningful despite this circularity,
-  but none of them substitute for a real ground-truth label.
-- **No independent validation dataset.** There is no held-out,
-  real-user, independently-labeled dataset to measure generalization
-  against.
-- **Synthetic data is cleaner than real smartphone data.** Real usage
-  logs contain missing events, duplicated events, ambiguous
-  transitions, timezone changes, and device restarts in combinations
-  the synthetic generator does not attempt to reproduce. The
-  data-quality stage (dedup, outlier capping, completeness) is
-  designed against the failure modes the team anticipated, not
-  against an exhaustive real-world sample.
-- **Archetypes are more separable than real people.** Real usage
-  likely varies continuously and inconsistently per person, not
-  cleanly into five categories.
+| Current scope | What it means | How it is addressed |
+|---|---|---|
+| Synthetic data, no real-user labels | A score of 7 has no established real-world meaning yet | Pilot of 20+ users with 14+ days of data and SAS-SV self-report (`docs/validation_protocol.md`) |
+| Heuristic weights are expert-chosen | Provenance is written into `scoring/config.py` ("WEIGHT PROVENANCE") | Weights tuned on a pilot sample separate from the one used to report validity |
+| Archetype checks test internal consistency | The archetypes are built to show the behaviors the scorer detects, so these checks confirm the code does what it was designed to do | Spearman rho with bootstrap CI against SAS-SV on real users |
+| M5 models reproduce the heuristic | The R² of about 0.98-0.99 and rho of about 0.995 measure fit to the heuristic. `model_evaluation.py` adds archetype ranking, correlation and perturbation checks | Retrain with `retarget_dataset()` on real SAS-SV labels |
+| Synthetic logs are cleaner than phone logs | Real logs have missing and duplicate events, timezone changes and restarts | The data-quality stage is exercised on real device logs during the pilot |
+| Five archetypes are separable | Real usage varies continuously per person | Unsupervised clustering on pilot data, used descriptively and checked against SAS-SV |
 
-**What would actually resolve this category:** a small pilot with
-real users and an independently-collected behavioral or self-report
-label (or comparison against an existing public dataset with such
-labels), used to check whether the heuristic's relative ordering and
-M5's learned model hold up against real outcomes — not just against
-the synthetic archetypes that were used to build them. This is
-tracked as a known gap, not a blocker to continuing the engineering
-build in the meantime.
+The pilot is the next phase of the plan: M8 backend, M9 Android
+collector, then data collection and analysis.
 
 ### Two design decisions resolved on paper ahead of their milestone
 
-**Permission denial (relevant to M9, not yet built):** Android's
+**Permission denial (designed for M9):** Android's
 `PACKAGE_USAGE_STATS` permission requires explicit user action and
 can be revoked at any time. The intended behavior, decided now so
 M9's implementation has a target rather than discovering this
@@ -530,22 +520,19 @@ result), and the backend distinguishes "no data because permission
 was never granted" from "no data because nothing happened" — the
 latter is what `assess_day_completeness()`'s gap heuristic already
 partially addresses; the former needs an explicit signal from the
-client, which does not exist yet since M9 hasn't started.
+client, which M9 adds.
 
-**Privacy architecture (relevant to M8/M9, not yet built):** since
+**Privacy architecture (for M8/M9):** since
 this project analyzes behavioral patterns rather than generic app
 metadata, an explicit position is stated now rather than left
 implicit:
 - What leaves the phone: session-level events (app, start/end time,
   category), not raw screen content or keystrokes.
-- What is stored: to be implemented in M8 (`storage/`, SQLite) — not
-  yet built, so nothing is currently stored beyond a single request's
-  lifetime in `mock_backend`.
-- Retention and deletion: not yet designed — this should be decided
-  before M8's storage layer is implemented, not after.
-- On-device-only operation: not currently supported and not yet
-  evaluated as an alternative to server-side scoring; noted here as
-  an open question for M8/M9 rather than a resolved "no."
+- What is stored: M8's `storage/` (SQLite) holds it; `mock_backend`
+  keeps nothing beyond a request.
+- Retention and deletion: decided before M8's storage layer is built.
+- On-device-only operation: an alternative to server-side scoring to
+  evaluate during M8/M9.
 
 
 

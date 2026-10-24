@@ -7,6 +7,7 @@ from attention_tracker.pipeline.features.feature_vector import build_feature_vec
 from attention_tracker.pipeline.quality.pipeline import run_data_quality_pipeline
 from attention_tracker.pipeline.windowing import group_sessions_by_user_app_week
 from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+from attention_tracker.scoring.distraction import compute_distraction_score
 from attention_tracker.scoring.heuristic import compute_heuristic_score
 from attention_tracker.synthetic.archetypes import ARCHETYPES, ArchetypeProfile
 from attention_tracker.synthetic.generator import SyntheticEventGenerator
@@ -35,6 +36,7 @@ def build_synthetic_distillation_dataset(
 
     rows: list[list[float]] = []
     targets: list[float] = []
+    distraction_targets: list[float] = []
     groups: list[str] = []
 
     for archetype in config.archetypes:
@@ -63,6 +65,12 @@ def build_synthetic_distillation_dataset(
 
                 rows.append(feature_row(fv, category))
                 targets.append(score)
+                distraction_targets.append(compute_distraction_score(fv, category))
                 groups.append(user_id)
 
-    return Dataset(rows=rows, targets=targets, groups=groups)
+    return Dataset(
+        rows=rows,
+        targets=targets,
+        groups=groups,
+        distraction_targets=distraction_targets,
+    )

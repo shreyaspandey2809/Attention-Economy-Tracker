@@ -62,9 +62,15 @@ class Dataset:
     targets: list[float]
     groups: list[str]
     column_names: tuple[str, ...] = field(default=COLUMN_NAMES)
+    distraction_targets: list[float] | None = None
 
     def __post_init__(self) -> None:
         n = len(self.rows)
+        if self.distraction_targets is not None and len(self.distraction_targets) != n:
+            raise ValueError(
+                "distraction_targets must match rows in length "
+                f"(got {len(self.distraction_targets)}, expected {n})"
+            )
         if len(self.targets) != n or len(self.groups) != n:
             raise ValueError(
                 "rows, targets, and groups must have the same length "

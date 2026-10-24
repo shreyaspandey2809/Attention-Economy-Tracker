@@ -8,8 +8,6 @@ from attention_tracker.models.dataset import COLUMN_NAMES, Dataset
 
 ModelKind = Literal["addiction", "distraction"]
 
-_DISTRACTION_EXCLUDED_COLUMNS = frozenset({"session_count", "sessions_under_30s_ratio"})
-
 MAX_BOOST_ROUNDS = 2000
 EARLY_STOPPING_ROUNDS = 50
 EARLY_STOPPING_MIN_DELTA = 1e-3
@@ -26,9 +24,20 @@ DEFAULT_LGB_PARAMS: dict[str, object] = {
 
 
 def _columns_for_kind(kind: ModelKind) -> list[str]:
-    if kind == "distraction":
-        return [c for c in COLUMN_NAMES if c not in _DISTRACTION_EXCLUDED_COLUMNS]
+    # Both models read every column. The two kinds differ by TARGET (the
+    # addiction vs the distraction heuristic), not by hiding features.
     return list(COLUMN_NAMES)
+
+
+def _targets_for_kind(dataset: Dataset, kind: ModelKind) -> list[float]:
+    if kind == "distraction":
+        if dataset.distraction_targets is None:
+            raise ValueError(
+                "dataset has no distraction_targets; build it with "
+                "build_synthetic_distillation_dataset() or pass kind='addiction'"
+            )
+        return dataset.distraction_targets
+    return dataset.targets
 
 
 def group_train_test_split(
@@ -130,15 +139,16 @@ def train_model(
     train_idx, val_idx, test_idx = group_train_val_test_split(
         dataset, val_fraction, test_fraction, seed
     )
+    targets = _targets_for_kind(dataset, kind)
 
     x_train = np.array(
         [[dataset.rows[i][c] for c in col_indices] for i in train_idx], dtype=float
     )
-    y_train = np.array([dataset.targets[i] for i in train_idx], dtype=float)
+    y_train = np.array([targets[i] for i in train_idx], dtype=float)
     x_val = np.array(
         [[dataset.rows[i][c] for c in col_indices] for i in val_idx], dtype=float
     )
-    y_val = np.array([dataset.targets[i] for i in val_idx], dtype=float)
+    y_val = np.array([targets[i] for i in val_idx], dtype=float)
 
     train_data = lgb.Dataset(x_train, label=y_train, feature_name=columns)
     valid_data = lgb.Dataset(x_val, label=y_val, feature_name=columns, reference=train_data)
@@ -162,16 +172,13 @@ def train_model(
 
     model = TrainedModel(booster=booster, kind=kind, columns=columns)
 
-    # Always score predict() against FULL-WIDTH rows — predict() owns
-    # the column re-indexing, so it must never be fed the already
-    # column-subsetted x_train/x_val arrays used for lgb.Dataset above.
     train_pred = model.predict([dataset.rows[i] for i in train_idx])
     val_pred = model.predict([dataset.rows[i] for i in val_idx])
     test_pred = model.predict([dataset.rows[i] for i in test_idx])
 
-    train_report = distillation_report([dataset.targets[i] for i in train_idx], train_pred)
-    val_report = distillation_report([dataset.targets[i] for i in val_idx], val_pred)
-    test_report = distillation_report([dataset.targets[i] for i in test_idx], test_pred)
+    train_report = distillation_report([targets[i] for i in train_idx], train_pred)
+    val_report = distillation_report([targets[i] for i in val_idx], val_pred)
+    test_report = distillation_report([targets[i] for i in test_idx], test_pred)
 
     return TrainResult(
         model=model,

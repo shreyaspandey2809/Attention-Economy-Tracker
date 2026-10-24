@@ -18,7 +18,7 @@ map and data-flow diagram. Build runs in four phases:
 
 ## Status
 
-M1–M5 complete; 322 automated tests pass. All data so far is synthetic.
+M1–M5 complete; 346 automated tests pass. All data so far is synthetic.
 Full history: [`CHANGELOG.md`](CHANGELOG.md).
 
 | Milestone | Status |
@@ -34,13 +34,12 @@ Full history: [`CHANGELOG.md`](CHANGELOG.md).
 | M9 Android collection | not started |
 | M10 Dashboard | not started |
 
-**Validation status.** Scores are computed from synthetic usage, since
-no real-device data has been collected yet. The heuristic is
-expert-weighted and the M5 models are distilled from it, so their fit
-measures how closely they reproduce the heuristic, not real-world
-accuracy. Validation against real users (SAS-SV self-report pilot) is
-the next phase; the protocol and statistics are already built and
-tested: [`docs/validation_protocol.md`](docs/validation_protocol.md).
+**Validation status.** Scores are computed from synthetic usage; real-device
+data collection is the next phase. The heuristic is expert-weighted and
+the M5 models are trained to reproduce it, so their fit measures
+agreement with the heuristic. Validation against real users (SAS-SV
+self-report pilot) is next; the protocol and statistics are already
+built and tested: [`docs/validation_protocol.md`](docs/validation_protocol.md).
 Design notes and scope: [`docs/architecture.md`](docs/architecture.md).
 
 ## Setup
@@ -50,6 +49,12 @@ python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 pip install -r requirements.txt
 pip install -e .
+```
+
+Train and save the M5 models (the demo backend serves them when present):
+
+```bash
+python -m attention_tracker.models.train_cli
 ```
 
 ## Running tests
@@ -70,14 +75,14 @@ tests/                           # mirrors src/ — one test module per source m
 config/                          # app taxonomies (seed + extended); more YAML in Phase 3
 docs/                            # architecture.md, validation_protocol.md
 mock_backend/                    # FastAPI demo service running the real pipeline
-                                  # end-to-end (not the real M8 backend — no
-                                  # persistence, no auth; a stand-in until M8 exists)
+                                  # end-to-end (demo layer: M8 adds
+                                  # persistence and auth)
 attention-collector-android/     # Kotlin + Jetpack Compose Android client
                                   # (calls mock_backend today; will point at the
                                   # real M8 service once it exists)
 demo_pipeline.py                 # CLI script exercising the full current pipeline
                                   # end-to-end for manual inspection
-dashboard/                       # React dashboard (Phase 4, M10 — not yet built)
+dashboard/                       # React dashboard (Phase 4, M10 — planned)
 ```
 
 ## Try it yourself
@@ -122,6 +127,7 @@ of the real M8/M9 milestones existing. `fastapi`, `uvicorn` and
 `httpx` come from `requirements.txt` (see [Setup](#setup)):
 
 ```bash
+python -m attention_tracker.models.train_cli   # once; the models are optional
 uvicorn mock_backend.main:app --port 8000
 ```
 
@@ -130,9 +136,10 @@ Studio, run it on an emulator (pre-configured to reach
 `10.0.2.2:8000`, the emulator's alias for the host machine's
 localhost), pick an archetype, and tap "Simulate a day." The dashboard
 shows the real computed `FeatureVector` for that simulated day, each
-app's M4 heuristic score, and a completeness indicator for the day —
-nothing displayed is fabricated, though the data source itself is
-synthetic (M9's real on-device collector doesn't exist yet).
+app's addiction and distraction scores (heuristic, plus LightGBM when
+trained), and a completeness indicator for the day.
+Everything displayed is computed by the real pipeline; the data source
+is synthetic until M9's on-device collector.
 
 **Standing rule:** every milestone from M4 onward should add a
 corresponding field to `mock_backend`'s `/simulate-day` response and

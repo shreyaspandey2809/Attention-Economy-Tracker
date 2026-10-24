@@ -88,6 +88,13 @@ def _fingerprint_with_hash_seed(hash_seed: str) -> str:
 
 
 def test_dataset_identical_across_processes_with_different_hash_seeds():
-    """Regression: the per-user RNG used hash(archetype.name), which Python
-    randomizes per process, so row counts differed run to run."""
     assert _fingerprint_with_hash_seed("1") == _fingerprint_with_hash_seed("2")
+
+def test_dataset_carries_a_distinct_distraction_target():
+    ds = build_synthetic_distillation_dataset(
+        SyntheticDatasetConfig(seeds_per_archetype=3, num_days=7)
+    )
+    assert ds.distraction_targets is not None
+    assert len(ds.distraction_targets) == len(ds)
+    assert all(0.0 <= t <= 10.0 for t in ds.distraction_targets)
+    assert ds.distraction_targets != ds.targets

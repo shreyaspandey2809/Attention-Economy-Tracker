@@ -4,11 +4,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from attention_tracker.models.dataset import feature_row
+from attention_tracker.models.registry import load_latest
 from attention_tracker.pipeline.features.feature_vector import build_feature_vector
 from attention_tracker.pipeline.quality.completeness import assess_day_completeness
 from attention_tracker.pipeline.quality.pipeline import run_data_quality_pipeline
 from attention_tracker.pipeline.windowing import group_sessions_by_user_app_day
 from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+from attention_tracker.scoring.distraction import compute_distraction_score
 from attention_tracker.scoring.heuristic import compute_heuristic_score
 from attention_tracker.synthetic.archetypes import ARCHETYPES
 from attention_tracker.synthetic.generator import SyntheticEventGenerator
@@ -24,6 +27,23 @@ app.add_middleware(
 
 _generator = SyntheticEventGenerator()
 _taxonomy = TaxonomyLoader()
+
+# kind -> (model, registry record). Filled lazily; a model trained after the
+# server started is picked up on the next request, no restart needed.
+_models: dict = {}
+
+
+def _get_models() -> dict:
+    for kind in ("addiction", "distraction"):
+        if kind not in _models:
+            loaded = load_latest(kind)
+            if loaded is not None:
+                _models[kind] = loaded
+    return _models
+
+
+def _clamp_score(x: float) -> float:
+    return max(0.0, min(10.0, x))
 
 
 class SimulateDayRequest(BaseModel):
@@ -51,6 +71,10 @@ class AppFeatureSummary(BaseModel):
     productive_interruption_rate: float
 
     heuristic_score: float
+    distraction_score: float
+    # LightGBM predictions (M5). None when no trained model is in the registry.
+    addiction_model_score: float | None = None
+    distraction_model_score: float | None = None
 
 
 class CompletenessSummary(BaseModel):
@@ -72,6 +96,8 @@ class SimulateDayResponse(BaseModel):
     per_app_features: list[AppFeatureSummary]
     scoring_status: str
     scoring_message: str
+    # kind -> registry version of the model that produced the *_model_score fields.
+    model_versions: dict[str, str] = {}
 
 
 @app.get("/archetypes")
@@ -99,11 +125,17 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
     completeness_result = assess_day_completeness(quality_result.sessions)
 
     windows = group_sessions_by_user_app_day(quality_result.sessions)
+    models = _get_models()
     per_app: list[AppFeatureSummary] = []
     for (user_id, package_name, day), sessions in windows.items():
         fv = build_feature_vector(sessions, _taxonomy)
         app_category = _taxonomy.lookup(fv.package_name).category
         score = compute_heuristic_score(fv, app_category)
+        row = feature_row(fv, app_category)
+        model_scores = {
+            kind: _clamp_score(model.predict([row])[0])
+            for kind, (model, _record) in models.items()
+        }
         per_app.append(
             AppFeatureSummary(
                 package_name=fv.package_name,
@@ -120,6 +152,9 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
                 weekend_usage_ratio=fv.weekend_usage_ratio,
                 productive_interruption_rate=fv.productive_interruption_rate,
                 heuristic_score=score,
+                distraction_score=compute_distraction_score(fv, app_category),
+                addiction_model_score=model_scores.get("addiction"),
+                distraction_model_score=model_scores.get("distraction"),
             )
         )
     per_app.sort(key=lambda a: a.heuristic_score, reverse=True)
@@ -141,10 +176,23 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
             reason=completeness_result.reason,
         ),
         per_app_features=per_app,
-        scoring_status="heuristic_only",
-        scoring_message=(
-            "Scores shown are the M4 heuristic baseline (0-10). "
-            "LightGBM, LSTM/autoencoder, and SHAP explainability (M5-M7) "
-            "are not implemented yet."
-        ),
+        scoring_status="models_loaded" if len(models) == 2 else "heuristic_only",
+        scoring_message=_scoring_message(models),
+        model_versions={kind: record.version for kind, (_m, record) in models.items()},
+    )
+
+
+def _scoring_message(models: dict) -> str:
+    if len(models) == 2:
+        return (
+            "Heuristic scores (0-10) plus LightGBM model scores trained on "
+            "synthetic users. The models reproduce the heuristics; they are "
+            "not validated against real users. LSTM/autoencoder and SHAP "
+            "(M6-M7) are not implemented yet."
+        )
+    return (
+        "Heuristic scores only (0-10). No trained model found: run "
+        "`python -m attention_tracker.models.train_cli` from the repo root "
+        "to create the M5 models. LSTM/autoencoder and SHAP (M6-M7) are not "
+        "implemented yet."
     )

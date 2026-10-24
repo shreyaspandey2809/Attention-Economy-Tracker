@@ -92,3 +92,14 @@ def test_dataset_rejects_wrong_row_width():
     bad_row = [0.0] * (len(COLUMN_NAMES) - 1)
     with pytest.raises(ValueError):
         Dataset(rows=[bad_row], targets=[1.0], groups=["u1"])
+
+
+def test_dataset_rejects_mismatched_distraction_target_length():
+    rows = [feature_row(_fv(), AppCategory.ADDICTIVE)]
+    with pytest.raises(ValueError):
+        Dataset(rows=rows, targets=[1.0], groups=["u1"], distraction_targets=[1.0, 2.0])
+
+
+def test_dataset_distraction_targets_default_to_none():
+    rows = [feature_row(_fv(), AppCategory.ADDICTIVE)]
+    assert Dataset(rows=rows, targets=[1.0], groups=["u1"]).distraction_targets is None

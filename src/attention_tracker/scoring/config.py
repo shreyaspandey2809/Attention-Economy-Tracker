@@ -42,6 +42,17 @@ def _default_category_multipliers() -> dict[AppCategory, float]:
     }
 
 
+def _default_distraction_category_multipliers() -> dict[AppCategory, float]:
+    return {
+        AppCategory.ADDICTIVE: 1.0,
+        AppCategory.COMMUNICATION: 1.0,
+        AppCategory.ENTERTAINMENT: 0.85,
+        AppCategory.UNKNOWN: 0.7,
+        AppCategory.UTILITY: 0.4,
+        AppCategory.PRODUCTIVE: 0.2,
+    }
+
+
 @dataclass(frozen=True)
 class NormalizationBounds:
     total_time_sec_cap: float = 7200.0  # 2 hours
@@ -50,7 +61,35 @@ class NormalizationBounds:
     category_multipliers: dict[AppCategory, float] = field(
         default_factory=_default_category_multipliers
     )
+    distraction_category_multipliers: dict[AppCategory, float] = field(
+        default_factory=_default_distraction_category_multipliers
+    )
+
+
+@dataclass(frozen=True)
+class DistractionWeights:
+    sessions_under_30s_ratio: float = 0.25
+    interarrival_under_2min_ratio: float = 0.20
+    productive_interruption_rate: float = 0.25
+    session_count: float = 0.15
+    hourly_usage_entropy: float = 0.10
+    total_time_sec: float = 0.05
+
+    def __post_init__(self) -> None:
+        total = (
+            self.sessions_under_30s_ratio
+            + self.interarrival_under_2min_ratio
+            + self.productive_interruption_rate
+            + self.session_count
+            + self.hourly_usage_entropy
+            + self.total_time_sec
+        )
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(
+                f"DistractionWeights must sum to 1.0, got {total}"
+            )
 
 
 DEFAULT_WEIGHTS = HeuristicWeights()
+DEFAULT_DISTRACTION_WEIGHTS = DistractionWeights()
 DEFAULT_BOUNDS = NormalizationBounds()
