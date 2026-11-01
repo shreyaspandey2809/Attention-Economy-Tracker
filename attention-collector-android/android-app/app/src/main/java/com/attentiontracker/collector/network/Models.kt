@@ -51,6 +51,14 @@ data class CompletenessSummary(
     val reason: String
 )
 
+// M8: what the persistent backend would store for this simulated day (the demo server stores nothing).
+@JsonClass(generateAdapter = true)
+data class StoragePreview(
+    @Json(name = "schema_version") val schemaVersion: Int,
+    @Json(name = "rows_per_table") val rowsPerTable: Map<String, Int>,
+    val note: String
+)
+
 @JsonClass(generateAdapter = true)
 data class SimulateDayResponse(
     val archetype: String,
@@ -65,5 +73,7 @@ data class SimulateDayResponse(
     @Json(name = "per_app_features") val perAppFeatures: List<AppFeatureSummary>,
     @Json(name = "scoring_status") val scoringStatus: String,
     @Json(name = "scoring_message") val scoringMessage: String,
-    @Json(name = "model_versions") val modelVersions: Map<String, String> = emptyMap()
+    @Json(name = "model_versions") val modelVersions: Map<String, String> = emptyMap(),
+    // M8 persistence preview. Null when talking to an older backend.
+    @Json(name = "storage_preview") val storagePreview: StoragePreview? = null
 )

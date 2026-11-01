@@ -2,6 +2,26 @@
 
 Newest first.
 
+## Phase 2 — M8 backend + SQLite (Oct 2026)
+
+- Added: `storage/` (SQLite via `sqlite3`, plain-SQL migrations,
+  `Repository`) with tables for users, devices, app metadata, raw
+  events, sessions, feature vectors, scores, daily scores and SAS-SV
+  totals. Raw events are the source of truth; the rest is rebuilt per
+  user.
+- Added: `api/` service: `/v1/health`, `/v1/consent`, `/v1/events`
+  (batch, idempotent), `/v1/users/{id}/scores`, `/v1/labels/sas-sv`,
+  `/v1/models`, `/v1/users/{id}/export`, `DELETE /v1/users/{id}`.
+  Per-device bearer tokens (hashed), consent required before ingest.
+- Added: scoring job running the unchanged pipeline over stored events,
+  with the two heuristics and the latest registry models, plus a
+  time-weighted daily score and completeness flag.
+- Added: operator CLI `python -m attention_tracker.api.admin`.
+- Added: `mock_backend` returns `storage_preview`; the Android dashboard
+  shows a "Would be stored" panel (Android code not compiled here).
+- Added: `TaxonomyLoader.entries()`.
+- Tests: 419 pass.
+
 ## Phase 1 — M5 complete (Oct 2026)
 
 - Added: a separate distraction heuristic (`scoring/distraction.py`).

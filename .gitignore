@@ -7,6 +7,11 @@ __pycache__/
 venv/
 .mypy_cache/
 
+# Local SQLite databases from the M8 service
+*.db
+*.db-wal
+*.db-shm
+
 # Trained model registry output (regenerate with python -m attention_tracker.models.train_cli)
 models_artifacts/
 

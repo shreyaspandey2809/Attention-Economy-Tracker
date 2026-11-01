@@ -114,3 +114,15 @@ def test_simulate_day_uses_trained_models_from_registry(monkeypatch, tmp_path):
     for a in body["per_app_features"]:
         assert 0.0 <= a["addiction_model_score"] <= 10.0
         assert 0.0 <= a["distraction_model_score"] <= 10.0
+
+def test_simulate_day_storage_preview_matches_the_pipeline_counts():
+    body = client.post("/simulate-day", json={"archetype": "DOOMSCROLLER"}).json()
+    preview = body["storage_preview"]
+    rows = preview["rows_per_table"]
+
+    assert preview["schema_version"] >= 1
+    assert set(rows) == {"raw_events", "sessions", "feature_vectors", "scores", "daily_scores"}
+    assert rows["raw_events"] == body["raw_event_count"] - body["duplicate_count"]
+    assert rows["sessions"] == body["session_count_total"]
+    assert rows["feature_vectors"] == rows["scores"] == len(body["per_app_features"])
+    assert rows["daily_scores"] >= 1
