@@ -11,6 +11,7 @@ from attention_tracker.pipeline.quality.completeness import assess_day_completen
 from attention_tracker.pipeline.quality.pipeline import run_data_quality_pipeline
 from attention_tracker.pipeline.windowing import group_sessions_by_user_app_day
 from attention_tracker.schema.taxonomy_loader import TaxonomyLoader
+from attention_tracker.storage.db import latest_schema_version
 from attention_tracker.scoring.distraction import compute_distraction_score
 from attention_tracker.scoring.heuristic import compute_heuristic_score
 from attention_tracker.synthetic.archetypes import ARCHETYPES
@@ -83,6 +84,15 @@ class CompletenessSummary(BaseModel):
     reason: str
 
 
+class StoragePreview(BaseModel):
+    """M8: what the real backend (attention_tracker.api) would persist for this
+    simulated day. Nothing is written here; the mock stays stateless."""
+
+    schema_version: int
+    rows_per_table: dict[str, int]
+    note: str
+
+
 class SimulateDayResponse(BaseModel):
     archetype: str
     user_id: str
@@ -98,6 +108,8 @@ class SimulateDayResponse(BaseModel):
     scoring_message: str
     # kind -> registry version of the model that produced the *_model_score fields.
     model_versions: dict[str, str] = {}
+    # M8 persistence preview (see StoragePreview).
+    storage_preview: StoragePreview | None = None
 
 
 @app.get("/archetypes")
@@ -179,6 +191,20 @@ def simulate_day(req: SimulateDayRequest) -> SimulateDayResponse:
         scoring_status="models_loaded" if len(models) == 2 else "heuristic_only",
         scoring_message=_scoring_message(models),
         model_versions={kind: record.version for kind, (_m, record) in models.items()},
+        storage_preview=StoragePreview(
+            schema_version=latest_schema_version(),
+            rows_per_table={
+                "raw_events": len(quality_result.dedup_result.events),
+                "sessions": len(quality_result.sessions),
+                "feature_vectors": len(per_app),
+                "scores": len(per_app),
+                "daily_scores": len({day for (_u, _p, day) in windows}),
+            },
+            note=(
+                "Rows the persistent M8 backend (attention_tracker.api) would store for this day. "
+                "This demo server stores nothing."
+            ),
+        ),
     )
 
 

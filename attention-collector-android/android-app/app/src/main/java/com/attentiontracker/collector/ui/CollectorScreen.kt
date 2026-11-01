@@ -21,6 +21,7 @@ import com.attentiontracker.collector.data.ARCHETYPE_DESCRIPTIONS
 import com.attentiontracker.collector.data.SimulationViewModel
 import com.attentiontracker.collector.data.UiState
 import com.attentiontracker.collector.network.AppFeatureSummary
+import com.attentiontracker.collector.network.StoragePreview
 import com.attentiontracker.collector.ui.theme.*
 import kotlin.math.roundToInt
 
@@ -106,6 +107,8 @@ fun CollectorScreen(viewModel: SimulationViewModel = viewModel()) {
                 Spacer(Modifier.height(20.dp))
                 ResultsList(s.response.perAppFeatures)
                 Spacer(Modifier.height(24.dp))
+                StoragePanel(s.response.storagePreview)
+                Spacer(Modifier.height(16.dp))
                 InProgressScoringPanel(
                     scoringMessage = s.response.scoringMessage,
                     m5Live = s.response.scoringStatus == "models_loaded"
@@ -408,6 +411,33 @@ private fun EmptyResultsState(message: String = "Pick an archetype and tap \"Sim
         contentAlignment = Alignment.Center
     ) {
         Text(message, color = TextFaint, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+@Composable
+private fun StoragePanel(preview: StoragePreview?) {
+    // M8: rows the persistent backend (attention_tracker.api) would keep for this day.
+    // Hidden when the backend predates M8; the demo server itself stores nothing.
+    if (preview == null) return
+    val order = listOf("raw_events", "sessions", "feature_vectors", "scores", "daily_scores")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(PanelDark, RoundedCornerShape(10.dp))
+            .border(1.dp, BorderSoft, RoundedCornerShape(10.dp))
+            .padding(16.dp)
+    ) {
+        Text(
+            "WOULD BE STORED (M8 · SCHEMA v${preview.schemaVersion})",
+            color = TextDim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(10.dp))
+        order.forEach { table ->
+            preview.rowsPerTable[table]?.let { MetricLine(table, "$it rows") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(preview.note, color = TextFaint, fontSize = 12.sp, lineHeight = 17.sp)
     }
 }
 

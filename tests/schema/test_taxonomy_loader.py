@@ -164,3 +164,10 @@ class TestExtendedTaxonomy:
         ]
         known = sum(1 for p in realistic if p in tax)
         assert known / len(realistic) >= 0.9, f"only {known}/{len(realistic)} known"
+
+def test_entries_lists_categorized_packages_but_not_ignored_ones():
+    tax = TaxonomyLoader(include_extended=True)
+    entries = tax.entries()
+
+    assert len(entries) == len(tax)
+    assert {e.package_name for e in entries}.isdisjoint(tax._ignored)

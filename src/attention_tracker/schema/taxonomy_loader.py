@@ -97,6 +97,10 @@ class TaxonomyLoader:
             category=AppCategory.UNKNOWN,
         )
 
+    def entries(self) -> list[AppMetadataEntry]:
+        """All categorized entries (ignored system packages are not included)."""
+        return list(self._entries.values())
+
     def __len__(self) -> int:
         return len(self._entries)
 

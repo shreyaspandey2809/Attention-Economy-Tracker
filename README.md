@@ -18,7 +18,7 @@ map and data-flow diagram. Build runs in four phases:
 
 ## Status
 
-M1–M5 complete; 346 automated tests pass. All data so far is synthetic.
+M1–M5 and M8 complete; 419 automated tests pass. All data so far is synthetic.
 Full history: [`CHANGELOG.md`](CHANGELOG.md).
 
 | Milestone | Status |
@@ -30,7 +30,7 @@ Full history: [`CHANGELOG.md`](CHANGELOG.md).
 | M5 LightGBM addiction + distraction models | done |
 | M6 LSTM + autoencoder | not started |
 | M7 SHAP explainability | not started |
-| M8 Backend + SQLite | not started |
+| M8 Backend + SQLite | done |
 | M9 Android collection | not started |
 | M10 Dashboard | not started |
 
@@ -75,11 +75,10 @@ tests/                           # mirrors src/ — one test module per source m
 config/                          # app taxonomies (seed + extended); more YAML in Phase 3
 docs/                            # architecture.md, validation_protocol.md
 mock_backend/                    # FastAPI demo service running the real pipeline
-                                  # end-to-end (demo layer: M8 adds
-                                  # persistence and auth)
+                                  # end-to-end (stateless demo layer)
 attention-collector-android/     # Kotlin + Jetpack Compose Android client
-                                  # (calls mock_backend today; will point at the
-                                  # real M8 service once it exists)
+                                  # (calls mock_backend today; M9 adds the real
+                                  # collector that talks to the M8 service)
 demo_pipeline.py                 # CLI script exercising the full current pipeline
                                   # end-to-end for manual inspection
 dashboard/                       # React dashboard (Phase 4, M10 — planned)
@@ -118,6 +117,24 @@ for (user_id, package_name, day), sessions in windows.items():
 
 Or run `python demo_pipeline.py` for a full pipeline walkthrough with
 printed output at every stage.
+
+## Running the M8 backend
+
+The persistent service stores events in SQLite and scores them with the
+same pipeline. There is no public sign-up: an operator issues each
+participant a device token.
+
+```bash
+export ATTENTION_DB_PATH=attention.db
+python -m attention_tracker.api.admin create-device pilot_001   # prints the token once
+uvicorn attention_tracker.api.app:create_app --factory --port 8001
+```
+
+A device first calls `POST /v1/consent`, then sends batches to
+`POST /v1/events` (idempotent). `GET /v1/users/{id}/scores` returns
+per-day and per-app scores; `GET .../export` and `DELETE /v1/users/{id}`
+cover data access and removal. Run `python -m attention_tracker.api.admin --help`
+for the other operator commands. Details: [`docs/architecture.md`](docs/architecture.md).
 
 ## Running the mock backend + Android app
 

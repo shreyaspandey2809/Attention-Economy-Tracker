@@ -11,7 +11,7 @@ Every arrow below was confirmed by reading the actual `import`
 statements in the source files, not written from memory of the
 original design.
 
-## Data flow, end to end (current state: M1–M5 complete)
+## Data flow, end to end (current state: M1–M5 and M8 complete)
 
 ```
                      ┌─────────────────────────┐
@@ -73,8 +73,22 @@ original design.
                      └─────────────────────────┘
 ```
 
+The M8 service reuses the same pipeline against stored data instead of
+generated data:
+
+```
+ Android collector (M9)  ──POST /v1/events──▶  api/app.py ──▶ storage/repository.py
+                                                                 │  raw_events (source of truth)
+ GET /v1/users/{id}/scores ──▶ ScoringJob (api/scoring_job.py) ◀─┘
+        re-scores when users.scores_stale = 1:
+        load events → run_data_quality_pipeline → group by user/app/day
+        → build_feature_vector → heuristics + latest registry models
+        → replace_derived(): sessions, feature_vectors, scores, daily_scores
+```
+
 Everything above the `mock_backend` box is real project logic, fully
-tested (346 tests, including M5's `models/`). `mock_backend` and the
+tested (419 tests, including M5's `models/` and M8's `storage/` and
+`api/`). `mock_backend` and the
 Android app are demo/integration layers — they call the real pipeline
 but are not themselves M8 or M9's actual scope (see "Demo layer and
 production scope" below).
@@ -413,6 +427,59 @@ Depends on `pipeline/features/feature_vector.py`, `schema/app_metadata.py`,
 - **Wired into `mock_backend` and the Android dashboard** (see below).
   M6 (LSTM, autoencoder) and M7 (SHAP) remain open.
 
+### `storage/` — SQLite persistence (M8)
+
+Depends on `pipeline/features/feature_vector.py` and `schema/` for the
+row types it stores. Standard-library `sqlite3`, no ORM.
+
+- **`db.py`** — `Database` (one shared connection behind an `RLock`,
+  `transaction()` context manager, foreign keys on) and `migrate()`,
+  which applies `migrations/NNN_name.sql` in order and records each in
+  `schema_migrations`. Numbering gaps and a failed script are refused.
+- **`migrations/001_initial.sql`** — the schema: `users`, `devices`
+  (token hash only), `app_metadata`, `raw_events` (unique on user,
+  package, event type, timestamp, which makes ingest idempotent),
+  `sessions`, `feature_vectors` (NULL = undefined feature, never 0),
+  `scores`, `daily_scores`, `sas_sv_labels` (10-60 total only, no item
+  data). Every table hangs off `users` with `ON DELETE CASCADE`, so
+  deleting a user removes everything held about them.
+- **`repository.py`** — `Repository`: all SQL. `raw_events` is the
+  source of truth; `sessions`, `feature_vectors`, `scores` and
+  `daily_scores` are derived and rebuilt per user by `replace_derived()`
+  in one transaction. `users.scores_stale` is set when ingest accepts
+  new events and cleared by the scoring job.
+
+### `api/` — the real FastAPI service (M8)
+
+Run with `uvicorn attention_tracker.api.app:create_app --factory`.
+`ATTENTION_DB_PATH` selects the database file, `ATTENTION_MODEL_DIR`
+the model registry.
+
+- **`app.py`** — `create_app()`. Endpoints: `GET /v1/health` (public);
+  `POST /v1/consent`; `POST /v1/events` (batch up to 5000, idempotent,
+  refused with 403 until consent is recorded or if an event's `user_id`
+  differs from the token's user); `GET /v1/users/{id}/scores?from=&to=`
+  (re-scores first when stale); `POST /v1/labels/sas-sv`;
+  `GET /v1/models`; `GET /v1/users/{id}/export`;
+  `DELETE /v1/users/{id}`. Every endpoint except health needs a device
+  token and can only touch that device's own user.
+- **`auth.py`** — per-device bearer tokens; only the SHA-256 is stored.
+  `issue_device()` returns the plaintext token once.
+- **`scoring_job.py`** — `ScoringJob`: loads all of a user's stored
+  events, runs the unchanged pipeline (`run_data_quality_pipeline` with
+  the extended taxonomy, so system packages are ignored), builds
+  feature vectors, calls the two heuristics and, when present, the
+  latest registry models, then stores the rows. `daily_scores` holds the
+  time-weighted mean of the per-app scores plus the
+  `assess_day_completeness()` flag. A user-override category in
+  `app_metadata` wins over the taxonomy. `ModelCache` picks up a model
+  trained while the server runs. The DB lock is held across load,
+  compute and write so a concurrent ingest cannot lose its stale flag.
+- **`admin.py`** — operator CLI (`create-device`, `revoke-device`,
+  `list-users`, `score`, `delete-user --yes`). There is no public
+  sign-up endpoint.
+- **`schemas.py`** — request/response models.
+
 ### `mock_backend/` — demo integration layer (not the real M8 backend)
 
 - **`main.py`** — FastAPI service. `GET /archetypes` lists the real
@@ -460,8 +527,6 @@ intentional, not abandoned:
   the `models/` module reference above. M6 (LSTM, autoencoder) is
   still reserved inside the same package.
 - **`explainability/`** — M7 (SHAP)
-- **`storage/`** — M8 (SQLite persistence)
-- **`api/`** — M8 (the real FastAPI service, replacing `mock_backend`)
 - **`utils/`** — cross-cutting helpers, populated as needed rather
   than on a fixed milestone
 
@@ -476,7 +541,10 @@ and which milestone extends it:
   archetype statistics, and the Android app's "Simulate a day" button
   displays them. Reading `UsageStatsManager` on a real phone is M9.
 - **Persistence.** `mock_backend` answers each request independently.
-  Storage and history are M8's `storage/` scope.
+  Storage and history live in the M8 service (`storage/`, `api/`). The
+  mock's `storage_preview` field and the Android "Would be stored"
+  panel show the rows M8 would keep for the simulated day; the Android
+  app still talks to the mock until M9 adds the real collector.
 - **Scoring.** The M4 heuristic is a tested, weighted combination of
   real features. M5's LightGBM "addiction" and "distraction" models
   are served by `mock_backend` and shown in the Android dashboard once
@@ -529,8 +597,13 @@ implicit:
 - What leaves the phone: session-level events (app, start/end time,
   category), not raw screen content or keystrokes.
 - What is stored: M8's `storage/` (SQLite) holds it; `mock_backend`
-  keeps nothing beyond a request.
-- Retention and deletion: decided before M8's storage layer is built.
+  keeps nothing beyond a request. Participants are identified only by a
+  pseudonymous `user_id`; device tokens are stored hashed; only the
+  SAS-SV total is kept.
+- Consent: events are refused until the device has recorded consent
+  (`POST /v1/consent`).
+- Retention and deletion: `GET /v1/users/{id}/export` returns every row
+  held about a user and `DELETE /v1/users/{id}` removes them all.
 - On-device-only operation: an alternative to server-side scoring to
   evaluate during M8/M9.
 
